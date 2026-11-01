@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { signInOwner, signUpOwner, signInOwnerWithGoogle, firstDashboardPath, currentOwner } from "@/lib/auth";
+import { signInOwner, signUpOwner, signInOwnerWithGoogle, handleGoogleRedirectResult, firstDashboardPath, currentOwner } from "@/lib/auth";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { StamplyMark, IconMail, IconQr, IconShield, IconChart, Toast } from "@/components/ui";
 
@@ -32,20 +32,40 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   // Already signed in (e.g. returned from a Google redirect)? Go home.
   useEffect(() => {
-    currentOwner().then(async (uid) => {
+    async function init() {
+      // 1. Collect any pending Google redirect result first.
+      const redirectRes = await handleGoogleRedirectResult();
+      if (redirectRes?.ok && redirectRes.uid) {
+        router.replace(await firstDashboardPath(redirectRes.uid));
+        return;
+      }
+      if (redirectRes && !redirectRes.ok && redirectRes.error) {
+        setError(redirectRes.error);
+      }
+      // 2. Already signed in from a previous session.
+      const uid = await currentOwner();
       if (uid) router.replace(await firstDashboardPath(uid));
-    });
+    }
+    init();
   }, [router]);
 
   async function google() {
     setGoogleBusy(true);
     setError(null);
+    setInfo(null);
     try {
       const res = await signInOwnerWithGoogle();
       if (!res.ok) {
+        // "Redirecting to Google…" means a redirect is in progress — show info,
+        // keep the spinner, page will reload when Google returns.
+        if (res.error === "Redirecting to Google…") {
+          setInfo("Redirecting to Google…");
+          return;
+        }
         setError(res.error ?? "Could not sign in with Google.");
         return;
       }
@@ -54,7 +74,8 @@ export default function Login() {
     } catch (e) {
       setError((e as Error).message || "Could not open your console — try again.");
     } finally {
-      setGoogleBusy(false);
+      // Don't clear busy if redirecting — keep spinner while page navigates
+      if (!info) setGoogleBusy(false);
     }
   }
 
@@ -238,6 +259,11 @@ export default function Login() {
               {error && (
                 <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="text-sm text-red-400 overflow-hidden">
                   {error}
+                </motion.p>
+              )}
+              {info && (
+                <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="text-sm text-[#f0d98c] overflow-hidden">
+                  {info}
                 </motion.p>
               )}
 

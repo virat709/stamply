@@ -205,6 +205,23 @@ export async function signInOwnerWithGoogle(): Promise<AuthResult> {
   }
 }
 
+/** Called once on page load to collect the result of a signInWithRedirect()
+ *  that may have happened on a previous page load. Returns null if there was
+ *  no pending redirect. */
+export async function handleGoogleRedirectResult(): Promise<AuthResult | null> {
+  if (!isFirebaseConfigured || !auth) return null;
+  try {
+    const { getRedirectResult } = await import("firebase/auth");
+    const result = await getRedirectResult(auth);
+    if (!result) return null;
+    cachedOwner = { uid: result.user.uid };
+    setSession(result.user.uid);
+    return { ok: true, uid: result.user.uid };
+  } catch (e) {
+    return { ok: false, error: friendlyAuthError(e) };
+  }
+}
+
 export async function signInOwner(email: string, password: string): Promise<AuthResult> {
   email = email.trim().toLowerCase();
   try {
