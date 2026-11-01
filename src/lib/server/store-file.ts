@@ -146,13 +146,27 @@ class FileStore implements Store {
     const existing = db.businesses.find((x) => x.id === b.id);
     if (!existing) throw new Error("Business not found.");
     if (existing.ownerId && existing.ownerId !== ownerId) throw new Error("Not your business console.");
-    Object.assign(existing, b);
+    // Only update safe mutable fields — never allow mass-assignment of ownerId,
+    // id, or createdAt (would let a caller steal or destroy the business).
+    existing.name = b.name ?? existing.name;
+    existing.loyaltyRule = b.loyaltyRule ?? existing.loyaltyRule;
+    existing.profile = b.profile ?? existing.profile;
+    if (b.logoUrl !== undefined) existing.logoUrl = b.logoUrl;
     write(db);
   }
 
   async findCustomerByPhone(phone: string): Promise<Customer | null> {
     const n = normalizePhone(phone);
-    return read().customers.find((c) => (c.phoneNumber ?? "").replace(/[^0-9+]/g, "") === n) ?? null;
+    // Primary: exact normalized match (e.g. "+15550102233" === "+15550102233")
+    const exact = read().customers.find((c) => (c.phoneNumber ?? "").replace(/[^0-9+]/g, "") === n);
+    if (exact) return exact;
+    // Fallback: compare just the digits so "+15550102233" matches "5550102233"
+    const queryDigits = n.replace(/\D/g, "");
+    if (queryDigits.length < 7) return null;
+    return read().customers.find((c) => {
+      const stored = (c.phoneNumber ?? "").replace(/\D/g, "");
+      return stored.endsWith(queryDigits) || queryDigits.endsWith(stored);
+    }) ?? null;
   }
   async findCustomerByEmail(email: string): Promise<Customer | null> {
     return read().customers.find((c) => (c.email ?? "").toLowerCase() === email.toLowerCase()) ?? null;

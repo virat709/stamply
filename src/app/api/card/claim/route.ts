@@ -18,6 +18,11 @@ export async function POST(req: Request) {
     if (v.status === "pending") return NextResponse.json({ status: "pending" });
     if (v.status === "rejected") return NextResponse.json({ error: "Your request was rejected — please see staff." }, { status: 403 });
     if (v.status !== "approved") return NextResponse.json({ error: "Verification failed." }, { status: 403 });
+    // Guard: reject expired approvals — an approved record must still be young
+    // enough (within VERIFICATION_TTL_MS) so an attacker can't replay an old id.
+    if (+new Date(v.expiresAt) < Date.now()) {
+      return NextResponse.json({ error: "Verification request has expired." }, { status: 403 });
+    }
 
     const card = await store.getCardFor(v.businessId, v.customerId);
     if (!card) return NextResponse.json({ error: "Stamp card not found." }, { status: 404 });

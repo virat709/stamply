@@ -35,19 +35,27 @@ const TAB_META: { t: Tab; label: string; icon: React.ReactNode }[] = [
 ];
 
 export function QrDownloadButtons({ svg, filenameBase, onDone }: { svg: SVGSVGElement | null; filenameBase: string; onDone: (msg: string, kind?: "ok" | "error") => void }) {
+  function resolveSvg(): SVGSVGElement | null {
+    // Prefer the passed ref; fall back to finding the nearest SVG in the DOM
+    // (handles the brief window between QRCodeSVG mounting and ref population).
+    return svg ?? (document.querySelector(`[data-qr="${filenameBase}"]`) as SVGSVGElement | null)
+      ?? document.querySelector("svg") as SVGSVGElement | null;
+  }
   async function png() {
-    if (!svg) return;
+    const el = resolveSvg();
+    if (!el) { onDone("QR not ready yet — try again in a moment.", "error"); return; }
     try {
-      await downloadQrPng(svg, `${filenameBase}.png`);
+      await downloadQrPng(el, `${filenameBase}.png`);
       onDone("QR saved as PNG");
     } catch (e) {
       onDone((e as Error).message || "Download failed", "error");
     }
   }
   function svgdl() {
-    if (!svg) return;
+    const el = resolveSvg();
+    if (!el) { onDone("QR not ready yet — try again in a moment.", "error"); return; }
     try {
-      downloadQrSvg(svg, `${filenameBase}.svg`);
+      downloadQrSvg(el, `${filenameBase}.svg`);
       onDone("QR saved as SVG");
     } catch {
       onDone("Download failed", "error");
@@ -55,10 +63,10 @@ export function QrDownloadButtons({ svg, filenameBase, onDone }: { svg: SVGSVGEl
   }
   return (
     <div className="flex gap-2 justify-center mt-3">
-      <motion.button whileTap={{ scale: 0.95 }} onClick={png} className="btn-ghost rounded-full px-4 py-1.5 text-xs font-semibold flex items-center gap-1.5">
+      <motion.button type="button" whileTap={{ scale: 0.95 }} onClick={png} className="btn-ghost rounded-full px-4 py-1.5 text-xs font-semibold flex items-center gap-1.5">
         ⬇ PNG
       </motion.button>
-      <motion.button whileTap={{ scale: 0.95 }} onClick={svgdl} className="btn-ghost rounded-full px-4 py-1.5 text-xs font-semibold flex items-center gap-1.5">
+      <motion.button type="button" whileTap={{ scale: 0.95 }} onClick={svgdl} className="btn-ghost rounded-full px-4 py-1.5 text-xs font-semibold flex items-center gap-1.5">
         ⬇ SVG (print)
       </motion.button>
     </div>
@@ -68,7 +76,6 @@ export default function Dashboard() {
   const params = useParams<{ businessId: string }>();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("overview");
-  const [mobileView, setMobileView] = useState<"qr" | "console">("qr"); // phones start on the QR
   const [business, setBusiness] = useState<Business | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [denied, setDenied] = useState(false);
@@ -167,10 +174,11 @@ export default function Dashboard() {
           </p>
         </section>
 
-        <div className={`mt-6 flex gap-2 overflow-x-auto text-sm pb-1 ${mobileView === "console" ? "" : "hidden sm:flex"}`}>
+        <div className={`mt-6 flex gap-2 overflow-x-auto text-sm pb-1`}>
           {TAB_META.map(({ t, label, icon }) => (
             <button
               key={t}
+              type="button"
               onClick={() => setTab(t)}
               className={`shrink-0 rounded-full px-4 py-2 font-medium inline-flex items-center gap-2 transition-all relative ${
                 tab === t ? "btn-gold" : "btn-ghost text-neutral-300"
@@ -182,7 +190,7 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <div className={mobileView === "console" ? "" : "hidden sm:block"}>
+        <div>
           <AnimatePresence mode="wait">
             <motion.div
               key={tab}
@@ -205,20 +213,6 @@ export default function Dashboard() {
             </motion.div>
           </AnimatePresence>
         </div>
-
-        {/* floating mobile control: home icon reveals the console sections,
-            ✕ takes the owner back to the QR screen */}
-        <button
-          onClick={() => {
-            setMobileView((v) => (v === "qr" ? "console" : "qr"));
-            if (mobileView === "qr") window.scrollTo({ top: 0, behavior: "smooth" });
-          }}
-          title={mobileView === "qr" ? "Open owner console" : "Back to QR"}
-          aria-label={mobileView === "qr" ? "Open owner console" : "Back to QR"}
-          className="sm:hidden fixed bottom-5 right-5 z-50 h-14 w-14 rounded-full bg-[#d4af37] text-black shadow-[0_10px_40px_-10px_rgba(212,175,55,0.9)] grid place-items-center text-xl active:scale-95 transition-transform"
-        >
-          {mobileView === "qr" ? "🏠" : "✕"}
-        </button>
       </div>
     </main>
   );
@@ -253,6 +247,8 @@ function Overview({ stats }: { stats: BusinessStats | null }) {
             <span className="text-[#d4af37]"><IconChart size={17} /></span> Customers
           </h2>
           <button
+            type="button"
+            disabled={!stats || stats.customers.length === 0}
             onClick={() => {
               if (!stats) return;
               const csv = ["id,name,whatsappNumber,email,createdAt,lastVisitedAt", ...stats.customers.map((c) => [c.id, c.name ?? "", c.phoneNumber ?? "", c.email ?? "", c.createdAt, c.lastVisitedAt].join(","))].join("\n");
@@ -260,9 +256,12 @@ function Overview({ stats }: { stats: BusinessStats | null }) {
               const a = document.createElement("a");
               a.href = url;
               a.download = "customers.csv";
+              document.body.appendChild(a);
               a.click();
+              a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 4000);
             }}
-            className="btn-gold rounded-full px-4 py-1.5 text-sm font-bold"
+            className="btn-gold rounded-full px-4 py-1.5 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Export CSV
           </button>
@@ -313,8 +312,13 @@ function CounterQrCard({ businessId, size = 180 }: { businessId: string; size?: 
 
   async function generate() {
     setBusy(true);
-    setToken(await createStampToken(businessId));
-    setBusy(false);
+    try {
+      setToken(await createStampToken(businessId));
+    } catch (e) {
+      setToast({ msg: (e as Error).message || "Could not generate code", kind: "error" });
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Single-use by scan: poll the token so the dashboard shows "used ✓" the
@@ -380,6 +384,22 @@ function CounterQrCard({ businessId, size = 180 }: { businessId: string; size?: 
 function StampStation({ businessId }: { businessId: string }) {
   const [lookup, setLookup] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function doStamp() {
+    if (!lookup.trim()) { setMsg("Enter a phone number or email."); return; }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await addStampByContact(businessId, lookup.includes("@") ? { email: lookup.trim() } : { phone: lookup.trim() });
+      setMsg(res.message);
+      setLookup("");
+    } catch (e) {
+      setMsg((e as Error).message || "Could not add stamp. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <section className="mt-6 grid gap-6 sm:grid-cols-2">
@@ -390,16 +410,21 @@ function StampStation({ businessId }: { businessId: string }) {
       <div className={cardCls}>
         <h2 className="font-bold">Manual stamp</h2>
         <p className="text-sm text-neutral-400 mt-1">Look up a customer by phone or email and add a stamp.</p>
-        <input value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="Phone or email" className={`${inputCls} mt-4`} />
+        <input
+          value={lookup}
+          onChange={(e) => setLookup(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); doStamp(); } }}
+          placeholder="Phone or email"
+          className={`${inputCls} mt-4`}
+          disabled={busy}
+        />
         <button
-          className="mt-3 btn-ghost rounded-full px-5 py-2 font-semibold"
-          onClick={async () => {
-            if (!lookup.trim()) return setMsg("Enter a phone number or email.");
-            const res = await addStampByContact(businessId, lookup.includes("@") ? { email: lookup.trim() } : { phone: lookup.trim() });
-            setMsg(res.message);
-          }}
+          type="button"
+          className="mt-3 btn-ghost rounded-full px-5 py-2 font-semibold disabled:opacity-50"
+          onClick={doStamp}
+          disabled={busy}
         >
-          Add stamp
+          {busy ? "Stamping…" : "Add stamp"}
         </button>
         {msg && <p className="mt-3 text-sm text-[#f0d98c]">{msg}</p>}
       </div>
@@ -476,15 +501,22 @@ function RedeemPanel({ businessId }: { businessId: string }) {
 
   async function confirmRedeem() {
     if (!card) return;
-    const res = await redeemReward(businessId, card.customerId);
-    if (res.error) {
-      setMsg({ text: res.error, kind: "error" });
-      return;
+    setChecking(true);
+    try {
+      const res = await redeemReward(businessId, card.customerId);
+      if (res.error) {
+        setMsg({ text: res.error, kind: "error" });
+        return;
+      }
+      setMsg({ text: `Done! They received ${reward}. Their card is back to 0 stamps and they can start collecting again.`, kind: "ok" });
+      setCard(null);
+      setQrText("");
+      setContact("");
+    } catch (e) {
+      setMsg({ text: (e as Error).message || "Could not redeem. Try again.", kind: "error" });
+    } finally {
+      setChecking(false);
     }
-    setMsg({ text: `Done! They received ${reward}. Their card is back to 0 stamps and they can start collecting again.`, kind: "ok" });
-    setCard(null);
-    setQrText("");
-    setContact("");
   }
 
   return (
@@ -551,10 +583,11 @@ function RedeemPanel({ businessId }: { businessId: string }) {
           </p>
           <motion.button
             onClick={confirmRedeem}
+            disabled={checking}
             whileTap={{ scale: 0.97 }}
-            className="mt-3 w-full rounded-full bg-emerald-500 text-black px-5 py-3 font-bold hover:bg-emerald-400 transition"
+            className="mt-3 w-full rounded-full bg-emerald-500 text-black px-5 py-3 font-bold hover:bg-emerald-400 transition disabled:opacity-50"
           >
-            ✓ Confirm — {reward} given, card reset to 0
+            {checking ? "Confirming…" : `✓ Confirm — ${reward} given, card reset to 0`}
           </motion.button>
         </motion.div>
       )}
@@ -643,6 +676,7 @@ function RulesForm({ business, onSaved }: { business: Business; onSaved: (b: Bus
 function VerificationPanel({ businessId }: { businessId: string }) {
   const [requests, setRequests] = useState<VerificationRequest[] | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
   useEffect(() => {
     // auto-refresh so new customer requests appear without a manual reload
@@ -659,9 +693,16 @@ function VerificationPanel({ businessId }: { businessId: string }) {
 
   async function accept(id: string) {
     setMsg(null);
-    const res = await approveVerificationRequest(businessId, id);
-    setMsg(res.ok ? "Accepted — stamp added to the customer's card." : (res.error ?? "Could not accept."));
-    setRequests(await listVerificationRequests(businessId));
+    setAcceptingId(id);
+    try {
+      const res = await approveVerificationRequest(businessId, id);
+      setMsg(res.ok ? "Accepted — stamp added to the customer's card." : (res.error ?? "Could not accept."));
+      setRequests(await listVerificationRequests(businessId));
+    } catch (e) {
+      setMsg((e as Error).message || "Could not accept. Try again.");
+    } finally {
+      setAcceptingId(null);
+    }
   }
 
   return (
@@ -722,10 +763,11 @@ function VerificationPanel({ businessId }: { businessId: string }) {
                   </div>
                   <motion.button
                     onClick={() => accept(r.id)}
+                    disabled={acceptingId === r.id}
                     whileTap={{ scale: 0.95 }}
-                    className="btn-accept rounded-full px-5 py-2.5 text-sm font-bold"
+                    className="btn-accept rounded-full px-5 py-2.5 text-sm font-bold disabled:opacity-50"
                   >
-                    ✓ Accept — give stamp
+                    {acceptingId === r.id ? "Accepting…" : "✓ Accept — give stamp"}
                   </motion.button>
                 </motion.li>
               );

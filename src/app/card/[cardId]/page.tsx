@@ -164,6 +164,23 @@ function CardInner() {
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}`
     : null;
 
+  /** Ensure URLs entered by owners without a scheme open correctly and can't
+   *  be javascript: injection vectors. */
+  function safeUrl(raw: string | undefined): string | null {
+    if (!raw) return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    // Block javascript: and data: schemes.
+    if (/^(javascript|data|vbscript):/i.test(trimmed)) return null;
+    // If no protocol is present, prepend https://.
+    if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
+    return trimmed;
+  }
+
+  const whatsappUrl = profile.phone
+    ? `https://wa.me/${profile.phone.replace(/\D/g, "")}`
+    : null;
+
   async function handleReviewSubmitted(result: SubmitReviewResult) {
     setReviewOpen(false);
     setReviewResult(result);
@@ -172,9 +189,10 @@ function CardInner() {
   }
 
   const services = [
-    profile.menuUrl && { href: profile.menuUrl, label: "View menu", emoji: "🍽️" },
-    profile.websiteUrl && { href: profile.websiteUrl, label: "Website", emoji: "🌐" },
+    safeUrl(profile.menuUrl) && { href: safeUrl(profile.menuUrl)!, label: "View menu", emoji: "🍽️" },
+    safeUrl(profile.websiteUrl) && { href: safeUrl(profile.websiteUrl)!, label: "Website", emoji: "🌐" },
     directionsUrl && { href: directionsUrl, label: "Directions", emoji: "📍" },
+    whatsappUrl && { href: whatsappUrl, label: "WhatsApp", emoji: "💬" },
   ].filter(Boolean) as { href: string; label: string; emoji: string }[];
 
   return (
@@ -324,7 +342,7 @@ function CardInner() {
         {profile.openingHours && <p className="mt-2.5 text-sm text-neutral-300">🕒 {profile.openingHours}</p>}
         <p className="mt-2 text-xs text-neutral-500">Stamps are collected at the counter — please ask our staff to add yours.</p>
         <div className="mt-4 grid grid-cols-2 gap-2.5">
-          <button onClick={() => setReviewOpen(true)} className="btn-gold rounded-xl px-4 py-3 font-bold">
+          <button type="button" onClick={() => setReviewOpen(true)} className={`btn-gold rounded-xl px-4 py-3 font-bold ${services.length === 0 ? "col-span-2" : ""}`}>
             ⭐ Leave a review
           </button>
           {services.map((s) => (
