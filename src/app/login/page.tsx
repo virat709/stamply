@@ -59,23 +59,20 @@ export default function Login() {
     setInfo(null);
     try {
       const res = await signInOwnerWithGoogle();
+      if (res.redirecting) {
+        setInfo("Redirecting to Google…");
+        return;
+      }
       if (!res.ok) {
-        // "Redirecting to Google…" means a redirect is in progress — show info,
-        // keep the spinner, page will reload when Google returns.
-        if (res.error === "Redirecting to Google…") {
-          setInfo("Redirecting to Google…");
-          return;
-        }
         setError(res.error ?? "Could not sign in with Google.");
+        setGoogleBusy(false);
         return;
       }
       const path = await firstDashboardPath(res.uid!);
       router.push(path);
     } catch (e) {
       setError((e as Error).message || "Could not open your console — try again.");
-    } finally {
-      // Don't clear busy if redirecting — keep spinner while page navigates
-      if (!info) setGoogleBusy(false);
+      setGoogleBusy(false);
     }
   }
 
@@ -174,29 +171,31 @@ export default function Login() {
           className="w-full max-w-sm relative"
         >
           <div className="lux-card glow-frame rounded-[30px] p-7 relative overflow-hidden">
-            <div className="lg:hidden mb-5 flex items-center gap-2.5">
-              <StamplyMark size={28} />
-              <span className="font-bold text-lg">Stamply<span className="text-[#d4af37]">.</span></span>
-            </div>
+            <div className="relative z-10">
+              <div className="lg:hidden mb-5 flex items-center gap-2.5">
+                <StamplyMark size={28} />
+                <span className="font-bold text-lg">Stamply<span className="text-[#d4af37]">.</span></span>
+              </div>
 
-            <div className="glass rounded-2xl p-1 flex text-sm relative z-10">
-              {(["signin", "signup"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => { setMode(m); setError(null); }}
-                  className={`relative flex-1 rounded-xl py-2.5 font-semibold transition-colors ${mode === m ? "text-black" : "text-neutral-400 hover:text-neutral-200"}`}
-                >
-                  {mode === m && (
-                    <motion.span
-                      layoutId="auth-pill"
-                      className="absolute inset-0 rounded-xl btn-gold"
-                      style={{ boxShadow: "none" }}
-                    />
-                  )}
-                  <span className="relative">{m === "signin" ? "Sign in" : "Create account"}</span>
-                </button>
-              ))}
-            </div>
+              <div className="glass rounded-2xl p-1 flex text-sm relative z-10">
+                {(["signin", "signup"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => { setMode(m); setError(null); }}
+                    className={`relative flex-1 rounded-xl py-2.5 font-semibold transition-colors cursor-pointer ${mode === m ? "text-black" : "text-neutral-400 hover:text-neutral-200"}`}
+                  >
+                    {mode === m && (
+                      <motion.span
+                        layoutId="auth-pill"
+                        className="absolute inset-0 rounded-xl btn-gold"
+                        style={{ boxShadow: "none" }}
+                      />
+                    )}
+                    <span className="relative">{m === "signin" ? "Sign in" : "Create account"}</span>
+                  </button>
+                ))}
+              </div>
 
             <form onSubmit={submit} className="mt-6 space-y-4">
               <AnimatePresence initial={false} mode="popLayout">
@@ -292,10 +291,11 @@ export default function Login() {
                   <span className="h-px flex-1 bg-white/10" />
                 </div>
                 <motion.button
+                  type="button"
                   onClick={google}
                   disabled={busy || googleBusy}
                   whileTap={{ scale: 0.97 }}
-                  className="mt-4 w-full rounded-full bg-white text-black py-3.5 font-bold flex items-center justify-center gap-3 hover:bg-neutral-200 transition disabled:opacity-50"
+                  className="mt-4 w-full rounded-full bg-white text-black py-3.5 font-bold flex items-center justify-center gap-3 hover:bg-neutral-200 transition disabled:opacity-50 relative z-20 cursor-pointer disabled:cursor-not-allowed shadow-md"
                 >
                   <GoogleG />
                   {googleBusy ? "Opening Google…" : "Continue with Google"}
@@ -305,6 +305,7 @@ export default function Login() {
                 </p>
               </>
             )}
+            </div>
           </div>
 
           <p className="mt-6 text-center text-sm text-neutral-500">

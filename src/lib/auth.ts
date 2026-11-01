@@ -143,6 +143,7 @@ export interface AuthResult {
   error?: string;
   uid?: string;
   business?: Business;
+  redirecting?: boolean;
 }
 
 export async function signUpOwner(restaurantName: string, email: string, password: string): Promise<AuthResult> {
@@ -191,14 +192,18 @@ export async function signInOwnerWithGoogle(): Promise<AuthResult> {
     return { ok: true, uid: cred.user.uid };
   } catch (e: unknown) {
     const code = (e as { code?: string }).code ?? "";
-    // Some browsers/settings block popups — fall back to a full-page redirect.
-    if (code === "auth/popup-blocked") {
+    // Some browsers/settings block popups or fail on mobile — fall back to a full-page redirect.
+    if (
+      code === "auth/popup-blocked" ||
+      code === "auth/cancelled-popup-request" ||
+      code === "auth/internal-error"
+    ) {
       try {
         await signInWithRedirect(auth, provider);
         // the page reloads before this returns — tell the UI something gentle
-        return { ok: false, error: "Redirecting to Google…" };
-      } catch {
-        return { ok: false, error: friendlyAuthError(e) };
+        return { ok: false, redirecting: true, error: "Redirecting to Google…" };
+      } catch (redirectErr) {
+        return { ok: false, error: friendlyAuthError(redirectErr) };
       }
     }
     return { ok: false, error: friendlyAuthError(e) };

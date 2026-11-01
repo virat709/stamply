@@ -103,6 +103,10 @@ input::placeholder, textarea::placeholder {
   background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.55) 50%, transparent 62%);
   transform: translateX(-120%);
   animation: sheen 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+.btn-gold:not(:disabled), .btn-ghost:not(:disabled), .btn-accept:not(:disabled) {
+  cursor: pointer;
 }
 .btn-gold:disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -207,6 +211,7 @@ input::placeholder, textarea::placeholder {
   border-radius: inherit;
   border: 1px solid rgba(212, 175, 55, 0.4);
   animation: pulse-ring 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
 }
 @keyframes pulse-ring {
   0% { transform: scale(0.96); opacity: 0.9; }
@@ -225,6 +230,7 @@ input::placeholder, textarea::placeholder {
   background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.65) 50%, transparent 70%);
   transform: translateX(-100%);
   animation: shimmer 2.4s ease-in-out infinite;
+  pointer-events: none;
 }
 @keyframes shimmer {
   to { transform: translateX(100%); }
@@ -246,6 +252,8 @@ input::placeholder, textarea::placeholder {
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   animation: frame-rotate 6s linear infinite;
+  pointer-events: none;
+  z-index: 0;
 }
 @property --frame-angle {
   syntax: "<angle>";
