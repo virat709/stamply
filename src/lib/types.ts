@@ -11,6 +11,7 @@ export interface BusinessProfile {
   openingHours?: string;
   websiteUrl?: string;
   menuUrl?: string;
+  communityUrl?: string;
   googleReviewUrl?: string;
   reservationsEnabled?: boolean;
 }
@@ -25,6 +26,12 @@ export interface Business {
   createdAt: string; // ISO
 }
 
+export interface CustomerHistoryItem {
+  id: string;
+  timestamp: string;
+  type: "stamp_added" | "reward_redeemed";
+}
+
 export interface Customer {
   id: string;
   name?: string;
@@ -32,6 +39,10 @@ export interface Customer {
   email?: string;
   createdAt: string;
   lastVisitedAt: string;
+  currentStamps?: number;
+  totalStamps?: number;
+  totalRedemptions?: number;
+  history?: CustomerHistoryItem[];
 }
 
 export interface StampCard {

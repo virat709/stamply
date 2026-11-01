@@ -320,6 +320,8 @@ class FirestoreStore implements Store {
       d.collection("stampCards").where("businessId", "==", businessId).get(),
       d.collection("visits").where("businessId", "==", businessId).get(),
     ]);
+    const cardMap = new Map(cardsSnap.docs.map((doc) => [doc.data().customerId, doc.data() as StampCard]));
+    const allVisits = visitsSnap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as { customerId: string; timestamp: string; type: "stamp_added" | "reward_redeemed" }) }));
     const customerIds = new Set(cardsSnap.docs.map((doc) => doc.data().customerId));
     const stamps = visitsSnap.docs.filter((doc) => doc.data().type === "stamp_added").length;
     const redemptions = visitsSnap.docs.filter((doc) => doc.data().type === "reward_redeemed").length;
@@ -328,7 +330,21 @@ class FirestoreStore implements Store {
     const customers: Customer[] = [];
     for (const cid of customerIds) {
       const c = await d.collection("customers").doc(cid).get();
-      if (c.exists) customers.push({ id: c.id, ...c.data() } as Customer);
+      if (c.exists) {
+        const card = cardMap.get(cid);
+        const customerVisits = allVisits
+          .filter((v) => v.customerId === cid)
+          .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        const totalStamps = customerVisits.filter((v) => v.type === "stamp_added").length;
+        customers.push({
+          id: c.id,
+          ...(c.data() as object),
+          currentStamps: card?.currentStamps ?? 0,
+          totalStamps: totalStamps,
+          totalRedemptions: card?.totalRedemptions ?? 0,
+          history: customerVisits.map((v) => ({ id: v.id, timestamp: v.timestamp, type: v.type })),
+        } as Customer);
+      }
     }
     return {
       totalCustomers: customers.length,

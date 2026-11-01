@@ -333,7 +333,20 @@ class FileStore implements Store {
     const required = maxStamps(business);
     const customers: Customer[] = [];
     for (const c of db.customers) {
-      if (cards.some((card) => card.customerId === c.id)) customers.push({ ...c });
+      const card = cards.find((card) => card.customerId === c.id);
+      if (card) {
+        const customerVisits = visits
+          .filter((v) => v.customerId === c.id)
+          .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        const totalStamps = customerVisits.filter((v) => v.type === "stamp_added").length;
+        customers.push({
+          ...c,
+          currentStamps: card.currentStamps,
+          totalStamps: totalStamps,
+          totalRedemptions: card.totalRedemptions,
+          history: customerVisits.map((v) => ({ id: v.id, timestamp: v.timestamp, type: v.type })),
+        });
+      }
     }
     return {
       totalCustomers: customers.length,

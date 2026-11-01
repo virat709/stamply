@@ -63,6 +63,7 @@ export const profileSchema = z.object({
   openingHours: z.string().trim().max(300).optional().or(z.literal("")),
   websiteUrl: optionalUrl,
   menuUrl: optionalUrl,
+  communityUrl: optionalUrl,
   googleReviewUrl: optionalUrl,
   reservationsEnabled: z.boolean().optional(),
 });

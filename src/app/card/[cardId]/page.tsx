@@ -189,10 +189,11 @@ function CardInner() {
   }
 
   const services = [
-    safeUrl(profile.menuUrl) && { href: safeUrl(profile.menuUrl)!, label: "View menu", emoji: "🍽️" },
+    safeUrl(profile.communityUrl) && { href: safeUrl(profile.communityUrl)!, label: "Join community", emoji: "👥" },
     safeUrl(profile.websiteUrl) && { href: safeUrl(profile.websiteUrl)!, label: "Website", emoji: "🌐" },
     directionsUrl && { href: directionsUrl, label: "Directions", emoji: "📍" },
     whatsappUrl && { href: whatsappUrl, label: "WhatsApp", emoji: "💬" },
+    safeUrl(profile.menuUrl) && { href: safeUrl(profile.menuUrl)!, label: "View menu", emoji: "🍽️" },
   ].filter(Boolean) as { href: string; label: string; emoji: string }[];
 
   return (

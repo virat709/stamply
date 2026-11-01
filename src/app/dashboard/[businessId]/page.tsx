@@ -18,7 +18,7 @@ import { currentOwner, signOutOwner } from "@/lib/auth";
 import { CountUp, Skeleton, Toast, IconChart, IconQr, IconTicket, IconSparkle, Monogram } from "@/components/ui";
 import { motion, AnimatePresence } from "framer-motion";
 import { z } from "zod";
-import type { Business, BusinessStats, Review, StampCard, StampToken } from "@/lib/types";
+import type { Business, BusinessStats, Review, StampCard, StampToken, Customer } from "@/lib/types";
 
 // ─── layout constants ─────────────────────────────────────────────────────────
 type Tab = "home" | "redeem" | "overview" | "settings";
@@ -26,7 +26,7 @@ type Tab = "home" | "redeem" | "overview" | "settings";
 const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base focus:outline-none focus:border-[#d4af37]/60 focus:ring-1 focus:ring-[#d4af37]/40 input-lux";
 const cardCls  = "lux-card rounded-2xl p-5";
 
-// Bottom-nav items (no verify)
+// Bottom-nav items
 const NAV: { t: Tab; label: string; emoji: string }[] = [
   { t: "home",     label: "Home",     emoji: "🏠" },
   { t: "redeem",   label: "Redeem",   emoji: "🎁" },
@@ -169,9 +169,9 @@ export default function Dashboard() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
           >
-            {tab === "home"     && <HomeTab     businessId={params.businessId} />}
+            {tab === "home"     && <HomeTab     business={business} onSaved={setBusiness} />}
             {tab === "redeem"   && <RedeemPanel businessId={params.businessId} />}
-            {tab === "overview" && <Overview    stats={stats} businessId={params.businessId} />}
+            {tab === "overview" && <Overview    stats={stats} business={business} />}
             {tab === "settings" && (
               <section className="space-y-5 pt-2">
                 <RulesForm   business={business} onSaved={setBusiness} />
@@ -206,12 +206,12 @@ export default function Dashboard() {
   );
 }
 
-// ─── Home tab: full QR + join QR below ────────────────────────────────────────
-function HomeTab({ businessId }: { businessId: string }) {
+// ─── Home tab: Counter QR + Join in our Community ─────────────────────────────
+function HomeTab({ business, onSaved }: { business: Business; onSaved: (b: Business) => void }) {
   return (
     <div className="space-y-5 pt-2">
-      <CounterQrCard businessId={businessId} size={260} prominent />
-      <StaticJoinQr  businessId={businessId} />
+      <CounterQrCard businessId={business.id} size={260} prominent />
+      <CommunityQrCard business={business} onSaved={onSaved} />
     </div>
   );
 }
@@ -308,45 +308,147 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
   );
 }
 
-// ─── Static join QR ───────────────────────────────────────────────────────────
-function StaticJoinQr({ businessId }: { businessId: string }) {
-  const [shown, setShown]     = useState(false);
-  const [joinQrEl, setJoinQrEl] = useState<SVGSVGElement | null>(null);
-  const [toast, setToast]     = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
+// ─── Join in our Community QR Card ───────────────────────────────────────────
+function CommunityQrCard({ business, onSaved }: { business: Business; onSaved: (b: Business) => void }) {
+  const currentLink = business.profile?.communityUrl || "";
+  const [linkInput, setLinkInput]   = useState(currentLink);
+  const [editing, setEditing]       = useState(!currentLink);
+  const [saving, setSaving]         = useState(false);
+  const [qrEl, setQrEl]             = useState<SVGSVGElement | null>(null);
+  const [toast, setToast]           = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
+
+  // Auto-prepend https:// if missing
+  function formatLink(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed) return "";
+    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  }
+
+  async function saveLink(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    const formatted = formatLink(linkInput);
+    if (!formatted) {
+      setToast({ msg: "Please enter a valid link", kind: "error" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated: Business = {
+        ...business,
+        profile: {
+          ...(business.profile ?? {}),
+          communityUrl: formatted,
+        },
+      };
+      await saveBusiness(updated);
+      onSaved(updated);
+      setEditing(false);
+      setToast({ msg: "Community link saved! QR generated ✓" });
+    } catch (err) {
+      setToast({ msg: (err as Error).message || "Could not save link", kind: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!currentLink) return;
+    try {
+      await navigator.clipboard.writeText(currentLink);
+      setToast({ msg: "Link copied to clipboard!" });
+    } catch {
+      setToast({ msg: "Failed to copy", kind: "error" });
+    }
+  }
 
   return (
     <div className={cardCls}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-bold text-sm">Join QR — posters &amp; menus</h2>
-          <p className="text-xs text-neutral-400 mt-0.5">
-            Permanent code for new members. Print on receipts, stands, or windows.
-          </p>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">👥</span>
+          <div>
+            <h2 className="font-bold text-sm">Join in our Community</h2>
+            <p className="text-[11px] text-neutral-400">WhatsApp, Instagram, Telegram, or any social link</p>
+          </div>
         </div>
-        <button type="button" onClick={() => setShown((v) => !v)}
-          className="btn-ghost shrink-0 rounded-full px-4 py-2 text-xs font-semibold ml-3">
-          {shown ? "Hide" : "Show"}
-        </button>
-      </div>
-      <AnimatePresence>
-        {shown && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }} className="overflow-hidden"
+        {currentLink && !editing && (
+          <button
+            type="button"
+            onClick={() => { setLinkInput(currentLink); setEditing(true); }}
+            className="btn-ghost rounded-full px-3 py-1 text-xs font-semibold text-neutral-400"
           >
-            <div className="mt-4 flex flex-col items-center">
-              <div className="bg-white rounded-xl p-3">
-                <QRCodeSVG ref={setJoinQrEl} value={`${window.location.origin}/b/${businessId}`} size={180} />
-              </div>
-              <QrDownloadButtons
-                svg={joinQrEl}
-                filenameBase={`stamply-join-qr-${businessId}`}
-                onDone={(m, k) => setToast({ msg: m, kind: k })}
-              />
-            </div>
-          </motion.div>
+            Edit link
+          </button>
         )}
-      </AnimatePresence>
+      </div>
+
+      {editing ? (
+        <form onSubmit={saveLink} className="mt-3 space-y-3">
+          <p className="text-xs text-neutral-400">
+            Paste your community or social link below to generate a QR code for posters and tables:
+          </p>
+          <input
+            value={linkInput}
+            onChange={(e) => setLinkInput(e.target.value)}
+            placeholder="e.g. https://chat.whatsapp.com/... or https://instagram.com/..."
+            className={inputCls}
+          />
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saving || !linkInput.trim()}
+              className="btn-gold flex-1 rounded-full py-2.5 font-bold text-xs disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Generate Community QR"}
+            </button>
+            {currentLink && (
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="btn-ghost rounded-full px-4 py-2.5 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      ) : (
+        <div className="mt-4 flex flex-col items-center">
+          <div className="bg-white rounded-2xl p-3 shadow-md">
+            <QRCodeSVG ref={setQrEl} value={currentLink} size={180} />
+          </div>
+
+          <p className="mt-3 text-xs text-[#f0d98c] font-medium max-w-[260px] truncate text-center">
+            {currentLink}
+          </p>
+
+          <div className="mt-2.5 flex gap-2">
+            <button
+              type="button"
+              onClick={copyLink}
+              className="btn-ghost rounded-full px-3.5 py-1.5 text-xs font-semibold flex items-center gap-1.5"
+            >
+              📋 Copy link
+            </button>
+            <a
+              href={currentLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-ghost rounded-full px-3.5 py-1.5 text-xs font-semibold flex items-center gap-1.5"
+            >
+              ↗ Open
+            </a>
+          </div>
+
+          <QrDownloadButtons
+            svg={qrEl}
+            filenameBase={`stamply-community-qr-${business.id}`}
+            onDone={(m, k) => setToast({ msg: m, kind: k })}
+          />
+          <p className="text-[10px] text-neutral-500 mt-2">Print for table tents or entrance posters</p>
+        </div>
+      )}
+
       <Toast toast={toast} onDone={() => setToast(null)} />
     </div>
   );
@@ -395,75 +497,191 @@ function ManualStamp({ businessId }: { businessId: string }) {
   );
 }
 
+// ─── Customer History Item Card ───────────────────────────────────────────────
+function CustomerCardItem({ customer, requiredStamps }: { customer: Customer; requiredStamps: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const wa = customer.phoneNumber ? whatsappLink(customer.phoneNumber) : null;
+  const history = customer.history || [];
+  const curStamps = customer.currentStamps ?? 0;
+  const totalStamps = customer.totalStamps ?? curStamps;
+  const totalRedeemed = customer.totalRedemptions ?? 0;
+
+  return (
+    <li className="py-3.5 space-y-2">
+      {/* top row: name, contact, wa */}
+      <div className="flex justify-between items-start gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm text-white">{customer.name || "Guest"}</span>
+            {wa && (
+              <a
+                href={wa}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={customer.phoneNumber}
+                className="rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[11px] text-[#f0d98c] hover:text-[#d4af37] flex items-center gap-1"
+              >
+                <span>💬</span> WhatsApp
+              </a>
+            )}
+          </div>
+          <p className="text-xs text-neutral-400 mt-0.5">{customer.phoneNumber || customer.email || "No contact"}</p>
+        </div>
+        <span className="text-[11px] text-neutral-500 shrink-0">
+          Last: {new Date(customer.lastVisitedAt).toLocaleDateString()}
+        </span>
+      </div>
+
+      {/* loyalty metrics row */}
+      <div className="flex items-center gap-2 flex-wrap text-xs">
+        <span className="rounded-lg bg-[#d4af37]/15 text-[#f0d98c] px-2.5 py-1 font-semibold border border-[#d4af37]/30">
+          🎯 {curStamps}/{requiredStamps} stamps
+        </span>
+        <span className="rounded-lg bg-white/5 text-neutral-300 px-2.5 py-1 border border-white/10">
+          ⭐ {totalStamps} lifetime stamps
+        </span>
+        {totalRedeemed > 0 && (
+          <span className="rounded-lg bg-emerald-400/15 text-emerald-300 px-2.5 py-1 font-semibold border border-emerald-400/30">
+            🎁 {totalRedeemed} redeemed
+          </span>
+        )}
+      </div>
+
+      {/* toggle history */}
+      <div className="pt-1">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-[#d4af37] hover:underline flex items-center gap-1 font-medium"
+        >
+          <span>{expanded ? "▾ Hide history" : `▸ View history (${history.length || totalStamps} visits)`}</span>
+        </button>
+
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-2.5 rounded-xl bg-white/[0.03] border border-white/10 p-3 overflow-hidden text-xs space-y-2"
+            >
+              <div className="flex justify-between text-[10px] uppercase tracking-wider text-neutral-500 pb-1 border-b border-white/10">
+                <span>Member since {new Date(customer.createdAt).toLocaleDateString()}</span>
+                <span>{history.length} events</span>
+              </div>
+              {history.length === 0 ? (
+                <p className="text-neutral-500 py-1">
+                  Active card has {curStamps} stamps ({totalStamps} lifetime stamps earned).
+                </p>
+              ) : (
+                <ul className="divide-y divide-white/5 max-h-48 overflow-y-auto pr-1">
+                  {history.map((h, idx) => (
+                    <li key={h.id || idx} className="py-1.5 flex justify-between items-center gap-2">
+                      <span className={h.type === "reward_redeemed" ? "text-emerald-300 font-medium" : "text-neutral-200"}>
+                        {h.type === "reward_redeemed" ? "🎁 Free Reward Redeemed" : "⭐ +1 Stamp Collected"}
+                      </span>
+                      <span className="text-neutral-500 text-[11px] shrink-0">
+                        {new Date(h.timestamp).toLocaleString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </li>
+  );
+}
+
 // ─── Overview tab ─────────────────────────────────────────────────────────────
-function Overview({ stats, businessId }: { stats: BusinessStats | null; businessId: string }) {
+function Overview({ stats, business }: { stats: BusinessStats | null; business: Business }) {
+  const reqStamps = business.loyaltyRule.requiredStamps;
+
   return (
     <section className="pt-2 space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <Stat label="Customers"  value={stats?.totalCustomers ?? 0} />
-        <Stat label="Visits"     value={stats?.totalVisits ?? 0} />
-        <Stat label="Rewards"    value={stats?.totalRedemptions ?? 0} />
-        <Stat label="Redemption" value={stats ? `${stats.redemptionRate}%` : "0%"} />
+        <Stat label="Total Customers" value={stats?.totalCustomers ?? 0} />
+        <Stat label="Total Stamps"    value={stats?.totalVisits ?? 0} />
+        <Stat label="Rewards Claimed" value={stats?.totalRedemptions ?? 0} />
+        <Stat label="Redemption Rate" value={stats ? `${stats.redemptionRate}%` : "0%"} />
       </div>
+
       <div className={cardCls}>
         <div className="flex items-center justify-between">
-          <h2 className="font-bold flex items-center gap-2">
-            <span className="text-[#d4af37]"><IconChart size={16} /></span> Customers
-          </h2>
+          <div>
+            <h2 className="font-bold flex items-center gap-2 text-base">
+              <span className="text-[#d4af37]"><IconChart size={17} /></span> Customers &amp; History
+            </h2>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              {stats?.totalCustomers ?? 0} registered members
+            </p>
+          </div>
           <button
             type="button"
             disabled={!stats || stats.customers.length === 0}
             onClick={() => {
               if (!stats) return;
-              const csv = ["id,name,whatsappNumber,email,createdAt,lastVisitedAt",
+              const csv = [
+                "id,name,phone,email,currentStamps,totalStamps,totalRedemptions,createdAt,lastVisitedAt",
                 ...stats.customers.map((c) =>
-                  [c.id, c.name ?? "", c.phoneNumber ?? "", c.email ?? "", c.createdAt, c.lastVisitedAt].join(",")
-                )].join("\n");
+                  [
+                    c.id,
+                    `"${(c.name ?? "").replace(/"/g, '""')}"`,
+                    c.phoneNumber ?? "",
+                    c.email ?? "",
+                    c.currentStamps ?? 0,
+                    c.totalStamps ?? (c.currentStamps ?? 0),
+                    c.totalRedemptions ?? 0,
+                    c.createdAt,
+                    c.lastVisitedAt,
+                  ].join(",")
+                ),
+              ].join("\n");
               const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
               const a = document.createElement("a");
-              a.href = url; a.download = "customers.csv";
-              document.body.appendChild(a); a.click(); a.remove();
+              a.href = url;
+              a.download = `customers-${business.id}.csv`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
               setTimeout(() => URL.revokeObjectURL(url), 4000);
             }}
-            className="btn-gold rounded-full px-3 py-1.5 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed">
+            className="btn-gold rounded-full px-3 py-1.5 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             Export CSV
           </button>
         </div>
-        <ul className="mt-4 divide-y divide-white/5 text-sm max-h-80 overflow-auto">
-          {stats === null
-            ? [0, 1, 2, 3].map((i) => (
-                <li key={i} className="py-3 flex justify-between">
-                  <Skeleton className="h-4 w-36" /><Skeleton className="h-4 w-16" />
-                </li>
-              ))
-            : stats.customers.map((c, i) => {
-                const wa = c.phoneNumber ? whatsappLink(c.phoneNumber) : null;
-                return (
-                  <motion.li key={c.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: Math.min(i * 0.04, 0.4) }}
-                    className="py-2.5 flex justify-between gap-3 items-center">
-                    <span className="min-w-0 truncate flex items-center gap-2">
-                      <span className="font-medium">{c.name || "Guest"}</span>
-                      {wa && (
-                        <a href={wa} target="_blank" rel="noopener noreferrer"
-                          className="text-[#f0d98c] hover:text-[#d4af37] shrink-0 text-sm">💬</a>
-                      )}
-                    </span>
-                    <span className="text-neutral-500 shrink-0 text-xs">
-                      {new Date(c.lastVisitedAt).toLocaleDateString()}
-                    </span>
-                  </motion.li>
-                );
-              })}
-          {stats && stats.customers.length === 0 && (
-            <li className="py-4 text-neutral-500 text-sm">No customers yet — first stamp brings the first name.</li>
+
+        <ul className="mt-4 divide-y divide-white/10 text-sm max-h-[500px] overflow-auto">
+          {stats === null ? (
+            [0, 1, 2, 3].map((i) => (
+              <li key={i} className="py-3 flex justify-between">
+                <Skeleton className="h-4 w-36" /><Skeleton className="h-4 w-16" />
+              </li>
+            ))
+          ) : stats.customers.length === 0 ? (
+            <li className="py-6 text-center text-neutral-500 text-sm">
+              No customers yet — the first stamp brings their profile and stamp count here.
+            </li>
+          ) : (
+            stats.customers.map((c) => (
+              <CustomerCardItem key={c.id} customer={c} requiredStamps={reqStamps} />
+            ))
           )}
         </ul>
       </div>
-      {/* also show counter QR in overview for quick access */}
+
+      {/* quick stamp counter QR access */}
       <div className={cardCls}>
-        <p className="text-xs text-neutral-500 mb-3">Quick stamp — show counter QR</p>
-        <CounterQrCard businessId={businessId} size={180} />
+        <p className="text-xs text-neutral-400 mb-2 font-medium">Quick Counter QR</p>
+        <CounterQrCard businessId={business.id} size={180} />
       </div>
     </section>
   );
@@ -476,7 +694,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
         {typeof value === "number" ? <CountUp value={value} /> : value}
       </div>
       <div className="flex items-center gap-2 mt-1">
-        <span className="text-[10px] text-neutral-500 uppercase tracking-[0.2em]">{label}</span>
+        <span className="text-[10px] text-neutral-400 uppercase tracking-[0.2em]">{label}</span>
       </div>
     </div>
   );
@@ -660,9 +878,13 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
   >({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      phone: p.phone ?? "", address: p.address ?? "",
-      openingHours: p.openingHours ?? "", websiteUrl: p.websiteUrl ?? "",
-      menuUrl: p.menuUrl ?? "", googleReviewUrl: p.googleReviewUrl ?? "",
+      phone: p.phone ?? "",
+      address: p.address ?? "",
+      openingHours: p.openingHours ?? "",
+      communityUrl: p.communityUrl ?? "",
+      websiteUrl: p.websiteUrl ?? "",
+      menuUrl: p.menuUrl ?? "",
+      googleReviewUrl: p.googleReviewUrl ?? "",
     },
   });
   const orUndef = (s: string | undefined) => (s && s.trim() !== "" ? s : undefined);
@@ -674,9 +896,13 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
           const updated: Business = {
             ...business,
             profile: {
-              phone: orUndef(v.phone), address: orUndef(v.address),
-              openingHours: orUndef(v.openingHours), websiteUrl: orUndef(v.websiteUrl),
-              menuUrl: orUndef(v.menuUrl), googleReviewUrl: orUndef(v.googleReviewUrl),
+              phone: orUndef(v.phone),
+              address: orUndef(v.address),
+              openingHours: orUndef(v.openingHours),
+              communityUrl: orUndef(v.communityUrl),
+              websiteUrl: orUndef(v.websiteUrl),
+              menuUrl: orUndef(v.menuUrl),
+              googleReviewUrl: orUndef(v.googleReviewUrl),
               reservationsEnabled: false,
             },
           };
@@ -688,7 +914,20 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
         } finally { setSaving(false); }
       })}>
       <h2 className="font-bold">Restaurant profile</h2>
-      <p className="text-sm text-neutral-400">Shown on customer stamp cards.</p>
+      <p className="text-sm text-neutral-400">Shown on customer stamp cards and community invites.</p>
+
+      <label className="block text-sm text-neutral-300">
+        Community / Social link (WhatsApp group, Instagram, etc.)
+        <input
+          {...register("communityUrl")}
+          placeholder="https://chat.whatsapp.com/... or https://instagram.com/..."
+          className={`${inputCls} mt-1`}
+        />
+        <span className="text-[11px] text-neutral-500 mt-1 block">
+          Generates the &ldquo;Join in our Community&rdquo; QR code and button.
+        </span>
+      </label>
+
       <label className="block text-sm text-neutral-300">
         WhatsApp number
         <input {...register("phone")} placeholder="+1 555 010 2233" className={`${inputCls} mt-1`} />
@@ -702,12 +941,12 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
         <input {...register("openingHours")} placeholder="Mon–Fri 7am–7pm" className={`${inputCls} mt-1`} />
       </label>
       <label className="block text-sm text-neutral-300">
-        Menu URL (optional)
-        <input {...register("menuUrl")} placeholder="https://…/menu.pdf" className={`${inputCls} mt-1`} />
-      </label>
-      <label className="block text-sm text-neutral-300">
         Website URL (optional)
         <input {...register("websiteUrl")} placeholder="https://…" className={`${inputCls} mt-1`} />
+      </label>
+      <label className="block text-sm text-neutral-300">
+        Menu URL (optional)
+        <input {...register("menuUrl")} placeholder="https://…/menu.pdf" className={`${inputCls} mt-1`} />
       </label>
       <label className="block text-sm text-neutral-300">
         Google Maps review link
