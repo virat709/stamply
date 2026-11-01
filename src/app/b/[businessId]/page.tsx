@@ -8,8 +8,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
 import { contactSchema, type ContactInput } from "@/lib/schemas";
 import { getBusiness, submitCollect } from "@/lib/db";
-import { Monogram, StamplyMark, IconUser, IconWhatsapp, IconCoffee, IconSparkle } from "@/components/ui";
+import { Monogram, StamplyMark, IconUser, IconWhatsapp, IconSparkle } from "@/components/ui";
 import type { Business } from "@/lib/types";
+import { detectRestaurantType } from "@/lib/types";
+import { StampIcon } from "@/components/StampGrid";
 
 // First visit: register (name + phone) and collect the stamped code.
 // Returning visits: staff must verify the customer before the stamp lands.
@@ -23,6 +25,11 @@ function JoinInner() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { requiredStamps, rewardDescription } = business?.loyaltyRule ?? { requiredStamps: 10, rewardDescription: "" };
+  const restaurantType = detectRestaurantType(
+    business?.name,
+    business?.loyaltyRule?.rewardDescription,
+    business?.profile?.restaurantType
+  );
   const {
     register,
     handleSubmit,
@@ -144,7 +151,7 @@ function JoinInner() {
 
           {/* reward banner */}
           <div className="mt-5 rounded-2xl border border-[#d4af37]/25 bg-[#d4af37]/[0.07] px-4 py-3.5 flex items-center gap-3">
-            <span className="text-[#f0d98c]"><IconCoffee size={18} /></span>
+            <span className="text-[#f0d98c]"><StampIcon type={restaurantType} size={18} /></span>
             <p className="text-sm text-neutral-300">
               Collect <span className="font-bold text-[#f0d98c]">{requiredStamps} stamps</span> — {rewardDescription}.
             </p>
@@ -173,10 +180,17 @@ function JoinInner() {
               </div>
             </div>
             <div>
-              <label className="label-lux" htmlFor="join-phone">WhatsApp number</label>
+              <label className="label-lux" htmlFor="join-phone">WhatsApp / Phone number (10 digits)</label>
               <div className="mt-1.5 relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconWhatsapp size={17} /></span>
-                <input id="join-phone" {...register("phoneNumber")} placeholder="+1 555 010 2233" className="input-lux w-full rounded-xl pl-11 pr-4 py-3.5" />
+                <input
+                  id="join-phone"
+                  {...register("phoneNumber")}
+                  placeholder="e.g. 9876543210"
+                  type="tel"
+                  maxLength={15}
+                  className="input-lux w-full rounded-xl pl-11 pr-4 py-3.5"
+                />
               </div>
             </div>
             <div className="text-center flex items-center gap-3">
@@ -212,7 +226,7 @@ function JoinInner() {
               )}
             </motion.button>
             <p className="text-xs text-neutral-500 text-center leading-relaxed">
-              First visit? You&apos;ll register instantly. Returning? Staff will accept your request and your stamp appears automatically.
+              Enter your 10-digit number to instantly receive your stamp and access your rewards card.
             </p>
           </form>
         </div>

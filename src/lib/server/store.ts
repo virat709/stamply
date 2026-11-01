@@ -20,8 +20,8 @@ import type {
 //    app runs fully through THIS code even without a service account.
 // ---------------------------------------------------------------------------
 
-export const STAMP_COOLDOWN_MS = 60_000;
-export const COOLDOWN_MSG = "Stamp already added recently. Please wait a minute before adding another.";
+export const STAMP_COOLDOWN_MS = 5_000;
+export const COOLDOWN_MSG = "Stamp already added recently. Please wait a few seconds before adding another.";
 export const CARD_FULL_MSG = "Reward already unlocked — redeem it first!";
 export const VERIFICATION_TTL_MS = 5 * 60_000;
 

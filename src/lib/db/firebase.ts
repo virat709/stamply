@@ -223,7 +223,7 @@ export async function createStampToken(businessId: string): Promise<StampToken> 
   const token: StampToken = {
     code: Math.random().toString(36).slice(2, 8).toUpperCase(),
     businessId,
-    expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
     used: false,
   };
   await setDoc(doc(d, "stampTokens", token.code + "_" + businessId), token);

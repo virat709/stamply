@@ -18,7 +18,9 @@ import { currentOwner, signOutOwner } from "@/lib/auth";
 import { CountUp, Skeleton, Toast, IconChart, IconQr, IconTicket, IconSparkle, Monogram } from "@/components/ui";
 import { motion, AnimatePresence } from "framer-motion";
 import { z } from "zod";
-import type { Business, BusinessStats, Review, StampCard, StampToken, Customer } from "@/lib/types";
+import type { Business, BusinessStats, Review, StampCard, StampToken, Customer, RestaurantType } from "@/lib/types";
+import { detectRestaurantType } from "@/lib/types";
+import { StampIcon } from "@/components/StampGrid";
 
 // ─── layout constants ─────────────────────────────────────────────────────────
 type Tab = "home" | "redeem" | "overview" | "settings";
@@ -225,8 +227,6 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
   const [counterQrEl, setCounterQrEl] = useState<SVGSVGElement | null>(null);
   const [toast, setToast] = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
   const [origin, setOrigin] = useState("");
-  const [autoRefreshCountdown, setAutoRefreshCountdown] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(300);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -236,15 +236,12 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
 
   async function generate() {
     setBusy(true);
-    setAutoRefreshCountdown(null);
     try {
       const freshToken = await createStampToken(businessId);
       if (!freshToken || !freshToken.code) {
         throw new Error("Could not mint new token. Try again.");
       }
       setToken(freshToken);
-      const remainingSeconds = Math.max(0, Math.floor((new Date(freshToken.expiresAt).getTime() - Date.now()) / 1000));
-      setTimeLeft(remainingSeconds || 300);
       setToast({ msg: `Fresh QR code ready: ${freshToken.code}` });
     } catch (e) {
       setToast({ msg: (e as Error).message || "Could not generate code", kind: "error" });
@@ -268,8 +265,6 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
         const fresh = await getStampToken(businessId, tokenCode);
         if (fresh?.used) {
           setToken({ ...fresh });
-          // Auto-mint next customer's code in 4 seconds
-          setAutoRefreshCountdown(4);
         }
       } catch {
         /* ignore network poll glitches */
@@ -278,38 +273,7 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
     return () => clearInterval(t);
   }, [businessId, tokenCode, tokenUsed]);
 
-  // Handle countdown after stamp delivery
-  useEffect(() => {
-    if (autoRefreshCountdown === null) return;
-    if (autoRefreshCountdown <= 0) {
-      generate();
-      return;
-    }
-    const timer = setTimeout(() => {
-      setAutoRefreshCountdown((prev) => (prev !== null ? prev - 1 : null));
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [autoRefreshCountdown]);
-
-  // Timer countdown: automatically refresh before expiration
-  useEffect(() => {
-    if (!token || tokenUsed) return;
-    const timer = setInterval(() => {
-      const remaining = Math.max(0, Math.floor((new Date(token.expiresAt).getTime() - Date.now()) / 1000));
-      setTimeLeft(remaining);
-      if (remaining <= 0) {
-        generate(); // Auto-refresh when 5 min window expires
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [token, tokenUsed]);
-
   const qrUrl = token?.code ? `${origin || ""}/b/${businessId}?collect=${token.code}` : "";
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}:${s < 10 ? "0" : ""}${s}`;
-  };
 
   return (
     <div className={prominent
@@ -320,7 +284,7 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
       <div className="w-full flex items-center justify-between mb-3">
         <div className="text-left">
           <p className="text-[9px] tracking-[0.3em] uppercase text-[#d4af37]">Counter QR</p>
-          <p className="text-xs text-neutral-400 mt-0.5">1-scan per customer · Rotates automatically</p>
+          <p className="text-xs text-neutral-400 mt-0.5">Single-use · Changes every refresh</p>
         </div>
         <button
           type="button"
@@ -357,23 +321,20 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
           {tokenUsed ? (
             <div className="mt-2.5 space-y-2">
               <p className="text-sm text-emerald-300 font-semibold flex items-center justify-center gap-1.5">
-                <span>✓</span> Stamp delivered!
-              </p>
-              <p className="text-xs text-neutral-400">
-                Next code in <span className="text-[#f0d98c] font-bold">{autoRefreshCountdown ?? 0}s</span>
+                <span>✓</span> Stamp collected by customer!
               </p>
               <button
                 type="button"
                 onClick={generate}
-                className="btn-gold rounded-full px-4 py-1.5 text-xs font-bold mt-1"
+                className="btn-gold rounded-full px-5 py-2 text-xs font-bold mt-1 shadow-lg inline-flex items-center gap-1.5"
               >
-                Refresh now
+                <span>🔁</span> Generate Next QR Code
               </button>
             </div>
           ) : (
-            <div className="mt-1.5 flex items-center gap-2 text-xs text-neutral-400">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span>Active · Rotates in {formatTime(timeLeft)}</span>
+            <div className="mt-1.5 flex items-center justify-center gap-2 text-xs text-neutral-400">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Ready for customer scan · Tap Refresh to change code</span>
             </div>
           )}
 
@@ -970,8 +931,21 @@ function RulesForm({ business, onSaved }: { business: Business; onSaved: (b: Bus
   );
 }
 
+const RESTAURANT_TYPES: { type: RestaurantType; label: string; iconLabel: string }[] = [
+  { type: "coffee", label: "Café & Coffee", iconLabel: "☕" },
+  { type: "pizza", label: "Pizzeria", iconLabel: "🍕" },
+  { type: "food", label: "Food & Burgers", iconLabel: "🍔" },
+  { type: "juice", label: "Juice & Smoothies", iconLabel: "🧃" },
+  { type: "dessert", label: "Bakery & Desserts", iconLabel: "🧁" },
+  { type: "bar", label: "Bar & Pub", iconLabel: "🍺" },
+  { type: "star", label: "VIP / Star", iconLabel: "⭐" },
+];
+
 function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: Business) => void }) {
   const p = business.profile ?? {};
+  const [selectedType, setSelectedType] = useState<RestaurantType>(
+    p.restaurantType ?? detectRestaurantType(business.name, business.loyaltyRule?.rewardDescription)
+  );
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
   const { register, handleSubmit, formState: { errors } } = useForm<
@@ -1004,18 +978,51 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
               websiteUrl: orUndef(v.websiteUrl),
               menuUrl: orUndef(v.menuUrl),
               googleReviewUrl: orUndef(v.googleReviewUrl),
+              restaurantType: selectedType,
               reservationsEnabled: false,
             },
           };
           await saveBusiness(updated);
           onSaved(updated);
-          setToast({ msg: "Profile saved" });
+          setToast({ msg: "Profile and stamp logo saved" });
         } catch (e) {
           setToast({ msg: (e as Error).message || "Could not save profile", kind: "error" });
         } finally { setSaving(false); }
       })}>
       <h2 className="font-bold">Restaurant profile</h2>
       <p className="text-sm text-neutral-400">Shown on customer stamp cards and community invites.</p>
+
+      {/* Restaurant stamp logo picker */}
+      <div className="space-y-2 pt-1">
+        <label className="block text-sm font-semibold text-neutral-200">
+          Stamp Logo & Venue Type
+        </label>
+        <p className="text-xs text-neutral-400">
+          Choose the custom stamp design displayed on your customer cards:
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+          {RESTAURANT_TYPES.map(({ type, label }) => {
+            const isSelected = selectedType === type;
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setSelectedType(type)}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
+                  isSelected
+                    ? "border-[#d4af37] bg-[#d4af37]/15 text-[#f0d98c] shadow-[0_0_15px_rgba(212,175,55,0.2)]"
+                    : "border-white/10 bg-white/5 text-neutral-300 hover:bg-white/10"
+                }`}
+              >
+                <span className="p-1.5 rounded-lg bg-black/40 text-[#f0d98c]">
+                  <StampIcon type={type} size={18} />
+                </span>
+                <span className="truncate">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <label className="block text-sm text-neutral-300">
         Community / Social link (WhatsApp group, Instagram, etc.)

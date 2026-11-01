@@ -2,9 +2,14 @@ import { z } from "zod";
 
 export const contactSchema = z.object({
   name: z.string().trim().min(2, "Enter your name").max(60),
-  // The phone number is the membership id — required, and matched after
-  // formatting is normalized (spaces/dashes ignored, see lib/db).
-  phoneNumber: z.string().trim().regex(/^[+0-9\-\s()]{7,20}$/, "Enter a valid phone number, like +1 555 010 2233"),
+  // The phone number is the membership id — requires at least 10 digits
+  phoneNumber: z
+    .string()
+    .trim()
+    .refine((val) => {
+      const digits = val.replace(/\D/g, "");
+      return digits.length >= 10 && digits.length <= 15;
+    }, "Enter a valid 10-digit phone number"),
 });
 
 export type ContactInput = z.infer<typeof contactSchema>;
@@ -66,6 +71,7 @@ export const profileSchema = z.object({
   communityUrl: optionalUrl,
   googleReviewUrl: optionalUrl,
   reservationsEnabled: z.boolean().optional(),
+  restaurantType: z.enum(["coffee", "pizza", "food", "juice", "dessert", "bar", "star"]).optional(),
 });
 
 export type ProfileInput = z.infer<typeof profileSchema>;

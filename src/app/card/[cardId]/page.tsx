@@ -11,6 +11,7 @@ import { downloadQrPng } from "@/lib/qr";
 import { Monogram, IconSparkle } from "@/components/ui";
 import type { SubmitReviewResult, VerificationRequest } from "@/lib/types";
 import type { StampCard, Business } from "@/lib/types";
+import { detectRestaurantType } from "@/lib/types";
 import { StampGrid } from "@/components/StampGrid";
 
 function CardInner() {
@@ -159,6 +160,11 @@ function CardInner() {
   const unlocked = card.currentStamps >= max;
   const pct = Math.min(100, Math.round((card.currentStamps / max) * 100));
   const profile = business.profile ?? {};
+  const restaurantType = detectRestaurantType(
+    business.name,
+    business.loyaltyRule?.rewardDescription,
+    business.profile?.restaurantType
+  );
 
   const directionsUrl = profile.address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}`
@@ -281,7 +287,12 @@ function CardInner() {
         </p>
 
         <div className="mt-7">
-          <StampGrid current={card.currentStamps} total={max} justStamped={justStamped} />
+          <StampGrid
+            current={card.currentStamps}
+            total={max}
+            justStamped={justStamped}
+            restaurantType={restaurantType}
+          />
         </div>
 
         <AnimatePresence>

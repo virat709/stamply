@@ -42,32 +42,23 @@ export async function collect(input: {
 
   // ---- returning member ----
   const card = await store.getOrCreateCard(input.businessId, customer.id);
-  let stamped = true;
+  let stamped = false;
   if (input.code) {
     const result = await store.stampWithToken(input.businessId, input.code, customer.id);
     if (typeof result === "string") {
-      stamped = false;
       error = result; // invalid/expired/used/cooldown — the stamp did not land
+    } else {
+      stamped = true;
     }
-  } else {
-    stamped = false;
   }
-  if (stamped) {
-    const res = NextResponse.json<CollectOutcome>({ status: "stamped", cardId: card.id, customerId: customer.id });
-    setClaim(input.req, res, input.businessId, { cardId: card.id, customerId: customer.id, token: card.ownerToken! });
-    return res;
-  }
-  // No live code that worked -> staff must verify in person. (Anti
-  // photo-scan fraud: re-scanning a screenshot never grants stamps.)
-  const verification = await store.createVerification(
-    input.businessId,
-    customer.id,
-    input.name || customer.name || "Guest",
-    phone
-  );
-  // NOTE: no possession cookie here. A stranger typing someone's phone number
-  // must never gain card access — the device gets access only after staff
-  // approves the verification (see /api/card/claim).
-  const res = NextResponse.json<CollectOutcome>({ status: "pending_verification", cardId: card.id, customerId: customer.id, verificationId: verification.id, error });
+
+  // Verification is done via 10-digit phone number — grant possession cookie directly
+  const res = NextResponse.json<CollectOutcome>({
+    status: stamped ? "stamped" : "registered",
+    cardId: card.id,
+    customerId: customer.id,
+    error,
+  });
+  setClaim(input.req, res, input.businessId, { cardId: card.id, customerId: customer.id, token: card.ownerToken! });
   return res;
 }

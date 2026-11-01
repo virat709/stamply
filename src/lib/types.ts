@@ -5,6 +5,8 @@ export interface LoyaltyRule {
   minSpend?: number | null; // currency units
 }
 
+export type RestaurantType = "coffee" | "pizza" | "food" | "juice" | "dessert" | "bar" | "star";
+
 export interface BusinessProfile {
   phone?: string;
   address?: string;
@@ -14,6 +16,20 @@ export interface BusinessProfile {
   communityUrl?: string;
   googleReviewUrl?: string;
   reservationsEnabled?: boolean;
+  restaurantType?: RestaurantType;
+}
+
+export function detectRestaurantType(name?: string, rewardDesc?: string, profileType?: string): RestaurantType {
+  if (profileType && ["coffee", "pizza", "food", "juice", "dessert", "bar", "star"].includes(profileType)) {
+    return profileType as RestaurantType;
+  }
+  const text = `${name || ""} ${rewardDesc || ""}`.toLowerCase();
+  if (/\b(pizza|slice|pizzeria|pie)\b/i.test(text)) return "pizza";
+  if (/\b(juice|smoothie|boba|tea|shake|drink|beverage|fruit)\b/i.test(text)) return "juice";
+  if (/\b(bakery|bake|cake|sweet|pastry|dessert|donut|icecream|gelato|croissant|waffle)\b/i.test(text)) return "dessert";
+  if (/\b(bar|pub|beer|brewery|wine|cocktail|lounge|ale)\b/i.test(text)) return "bar";
+  if (/\b(burger|grill|bbq|taco|food|kitchen|diner|bistro|restaurant|steak|noodle|sushi|sandwich|bowl|shawarma|wrap)\b/i.test(text)) return "food";
+  return "coffee"; // Default classic coffee stamp
 }
 
 export interface Business {
