@@ -24,12 +24,12 @@ import type { Business, BusinessStats, Review, StampCard, StampToken, Customer }
 type Tab = "home" | "redeem" | "overview" | "settings";
 
 const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base focus:outline-none focus:border-[#d4af37]/60 focus:ring-1 focus:ring-[#d4af37]/40 input-lux";
-const cardCls  = "lux-card rounded-2xl p-5";
+const cardCls = "lux-card rounded-2xl p-5";
 
 // Bottom-nav items
 const NAV: { t: Tab; label: string; emoji: string }[] = [
-  { t: "home",     label: "Home",     emoji: "🏠" },
-  { t: "redeem",   label: "Redeem",   emoji: "🎁" },
+  { t: "home", label: "Home", emoji: "🏠" },
+  { t: "redeem", label: "Redeem", emoji: "🎁" },
   { t: "overview", label: "Overview", emoji: "📊" },
   { t: "settings", label: "Settings", emoji: "⚙️" },
 ];
@@ -79,13 +79,13 @@ export function QrDownloadButtons({ svg, filenameBase, onDone }: {
 
 // ─── Root dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const params   = useParams<{ businessId: string }>();
-  const router   = useRouter();
-  const [tab, setTab]         = useState<Tab>("home");
+  const params = useParams<{ businessId: string }>();
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>("home");
   const [business, setBusiness] = useState<Business | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [denied, setDenied]     = useState(false);
-  const [stats, setStats]       = useState<BusinessStats | null>(null);
+  const [denied, setDenied] = useState(false);
+  const [stats, setStats] = useState<BusinessStats | null>(null);
   const [ownerUid, setOwnerUid] = useState<string | null>(null);
 
   useEffect(() => {
@@ -94,7 +94,7 @@ export default function Dashboard() {
       .catch(() => setNotFound(true));
   }, [params.businessId]);
 
-  useEffect(() => { currentOwner().then(setOwnerUid).catch(() => {}); }, []);
+  useEffect(() => { currentOwner().then(setOwnerUid).catch(() => { }); }, []);
 
   useEffect(() => {
     if (!business) return;
@@ -169,12 +169,12 @@ export default function Dashboard() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
           >
-            {tab === "home"     && <HomeTab     business={business} onSaved={setBusiness} />}
-            {tab === "redeem"   && <RedeemPanel businessId={params.businessId} />}
-            {tab === "overview" && <Overview    stats={stats} business={business} />}
+            {tab === "home" && <HomeTab business={business} onSaved={setBusiness} />}
+            {tab === "redeem" && <RedeemPanel businessId={params.businessId} />}
+            {tab === "overview" && <Overview stats={stats} business={business} />}
             {tab === "settings" && (
               <section className="space-y-5 pt-2">
-                <RulesForm   business={business} onSaved={setBusiness} />
+                <RulesForm business={business} onSaved={setBusiness} />
                 <ProfileForm business={business} onSaved={setBusiness} />
                 <ManualStamp businessId={params.businessId} />
                 <ReviewsPanel businessId={params.businessId} />
@@ -220,15 +220,32 @@ function HomeTab({ business, onSaved }: { business: Business; onSaved: (b: Busin
 function CounterQrCard({ businessId, size = 220, prominent = false }: {
   businessId: string; size?: number; prominent?: boolean;
 }) {
-  const [token, setToken]         = useState<StampToken | null>(null);
-  const [busy, setBusy]           = useState(false);
+  const [token, setToken] = useState<StampToken | null>(null);
+  const [busy, setBusy] = useState(false);
   const [counterQrEl, setCounterQrEl] = useState<SVGSVGElement | null>(null);
-  const [toast, setToast]         = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
+  const [origin, setOrigin] = useState("");
+  const [autoRefreshCountdown, setAutoRefreshCountdown] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(300);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setOrigin(window.location.origin);
+    }
+  }, []);
 
   async function generate() {
     setBusy(true);
+    setAutoRefreshCountdown(null);
     try {
-      setToken(await createStampToken(businessId));
+      const freshToken = await createStampToken(businessId);
+      if (!freshToken || !freshToken.code) {
+        throw new Error("Could not mint new token. Try again.");
+      }
+      setToken(freshToken);
+      const remainingSeconds = Math.max(0, Math.floor((new Date(freshToken.expiresAt).getTime() - Date.now()) / 1000));
+      setTimeLeft(remainingSeconds || 300);
+      setToast({ msg: `Fresh QR code ready: ${freshToken.code}` });
     } catch (e) {
       setToast({ msg: (e as Error).message || "Could not generate code", kind: "error" });
     } finally {
@@ -236,16 +253,63 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
     }
   }
 
+  // Auto-generate code immediately on mount so cashier never sees an empty box
+  useEffect(() => {
+    generate();
+  }, [businessId]);
+
+  // Polling for token usage (detect when a customer scans and collects the stamp)
   const tokenCode = token?.code;
   const tokenUsed = !!token?.used;
   useEffect(() => {
     if (!tokenCode || tokenUsed) return;
     const t = setInterval(async () => {
-      const fresh = await getStampToken(businessId, tokenCode);
-      if (fresh?.used) setToken({ ...fresh });
-    }, 2000);
+      try {
+        const fresh = await getStampToken(businessId, tokenCode);
+        if (fresh?.used) {
+          setToken({ ...fresh });
+          // Auto-mint next customer's code in 4 seconds
+          setAutoRefreshCountdown(4);
+        }
+      } catch {
+        /* ignore network poll glitches */
+      }
+    }, 1500);
     return () => clearInterval(t);
   }, [businessId, tokenCode, tokenUsed]);
+
+  // Handle countdown after stamp delivery
+  useEffect(() => {
+    if (autoRefreshCountdown === null) return;
+    if (autoRefreshCountdown <= 0) {
+      generate();
+      return;
+    }
+    const timer = setTimeout(() => {
+      setAutoRefreshCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [autoRefreshCountdown]);
+
+  // Timer countdown: automatically refresh before expiration
+  useEffect(() => {
+    if (!token || tokenUsed) return;
+    const timer = setInterval(() => {
+      const remaining = Math.max(0, Math.floor((new Date(token.expiresAt).getTime() - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        generate(); // Auto-refresh when 5 min window expires
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [token, tokenUsed]);
+
+  const qrUrl = token?.code ? `${origin || ""}/b/${businessId}?collect=${token.code}` : "";
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
 
   return (
     <div className={prominent
@@ -256,27 +320,31 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
       <div className="w-full flex items-center justify-between mb-3">
         <div className="text-left">
           <p className="text-[9px] tracking-[0.3em] uppercase text-[#d4af37]">Counter QR</p>
-          <p className="text-xs text-neutral-400 mt-0.5">One scan per customer</p>
+          <p className="text-xs text-neutral-400 mt-0.5">1-scan per customer · Rotates automatically</p>
         </div>
-        {token && (
-          <button type="button" onClick={generate} disabled={busy}
-            className="btn-gold rounded-full px-4 py-2 text-sm font-bold inline-flex items-center gap-1.5 disabled:opacity-60">
-            🔁 {busy ? "…" : "Refresh"}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={generate}
+          disabled={busy}
+          className="btn-gold rounded-full px-4 py-2 text-sm font-bold inline-flex items-center gap-1.5 disabled:opacity-60 shadow-md transition-all active:scale-95"
+        >
+          <span className={busy ? "animate-spin" : ""}>🔁</span> {busy ? "Refreshing…" : "Refresh"}
+        </button>
       </div>
 
       {!token ? (
-        <button type="button" disabled={busy} onClick={generate}
-          className="btn-gold w-full rounded-full py-4 text-base font-bold mt-2">
-          {busy ? "Generating…" : "Generate QR code"}
-        </button>
+        <div className="py-12 flex flex-col items-center">
+          <div className="h-44 w-44 rounded-2xl bg-white/5 animate-pulse flex items-center justify-center">
+            <span className="text-2xl animate-spin">⏳</span>
+          </div>
+          <p className="text-xs text-neutral-400 mt-3">Minting fresh counter QR code…</p>
+        </div>
       ) : (
         <>
-          <div className={`bg-white rounded-2xl p-4 ${tokenUsed ? "opacity-30 grayscale" : "pulse-ring"}`}>
+          <div className={`bg-white rounded-2xl p-4 transition-all duration-300 ${tokenUsed ? "opacity-35 grayscale scale-95" : "pulse-ring"}`}>
             <QRCodeSVG
               ref={setCounterQrEl}
-              value={`${window.location.origin}/b/${businessId}?collect=${token.code}`}
+              value={qrUrl}
               size={size}
             />
           </div>
@@ -287,14 +355,53 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
           </p>
 
           {tokenUsed ? (
-            <p className="mt-2 text-sm text-emerald-300 font-semibold">
-              ✓ Stamp delivered — tap Refresh for next customer
-            </p>
+            <div className="mt-2.5 space-y-2">
+              <p className="text-sm text-emerald-300 font-semibold flex items-center justify-center gap-1.5">
+                <span>✓</span> Stamp delivered!
+              </p>
+              <p className="text-xs text-neutral-400">
+                Next code in <span className="text-[#f0d98c] font-bold">{autoRefreshCountdown ?? 0}s</span>
+              </p>
+              <button
+                type="button"
+                onClick={generate}
+                className="btn-gold rounded-full px-4 py-1.5 text-xs font-bold mt-1"
+              >
+                Refresh now
+              </button>
+            </div>
           ) : (
-            <p className="text-xs text-neutral-500 mt-1.5">
-              Expires {new Date(token.expiresAt).toLocaleTimeString()}
-            </p>
+            <div className="mt-1.5 flex items-center gap-2 text-xs text-neutral-400">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>Active · Rotates in {formatTime(timeLeft)}</span>
+            </div>
           )}
+
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                if (!qrUrl) return;
+                try {
+                  await navigator.clipboard.writeText(qrUrl);
+                  setToast({ msg: "Customer scan link copied!" });
+                } catch {
+                  setToast({ msg: "Could not copy", kind: "error" });
+                }
+              }}
+              className="btn-ghost rounded-full px-3 py-1.5 text-[11px] font-semibold text-neutral-300 flex items-center gap-1"
+            >
+              📋 Copy scan link
+            </button>
+            <a
+              href={qrUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-ghost rounded-full px-3 py-1.5 text-[11px] font-semibold text-neutral-300 flex items-center gap-1"
+            >
+              ↗ Test scan
+            </a>
+          </div>
 
           <QrDownloadButtons
             svg={counterQrEl}
@@ -311,11 +418,11 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
 // ─── Join in our Community QR Card ───────────────────────────────────────────
 function CommunityQrCard({ business, onSaved }: { business: Business; onSaved: (b: Business) => void }) {
   const currentLink = business.profile?.communityUrl || "";
-  const [linkInput, setLinkInput]   = useState(currentLink);
-  const [editing, setEditing]       = useState(!currentLink);
-  const [saving, setSaving]         = useState(false);
-  const [qrEl, setQrEl]             = useState<SVGSVGElement | null>(null);
-  const [toast, setToast]           = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
+  const [linkInput, setLinkInput] = useState(currentLink);
+  const [editing, setEditing] = useState(!currentLink);
+  const [saving, setSaving] = useState(false);
+  const [qrEl, setQrEl] = useState<SVGSVGElement | null>(null);
+  const [toast, setToast] = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
 
   // Auto-prepend https:// if missing
   function formatLink(raw: string) {
@@ -457,8 +564,8 @@ function CommunityQrCard({ business, onSaved }: { business: Business; onSaved: (
 // ─── Manual stamp (inside Settings) ──────────────────────────────────────────
 function ManualStamp({ businessId }: { businessId: string }) {
   const [lookup, setLookup] = useState("");
-  const [msg, setMsg]       = useState<string | null>(null);
-  const [busy, setBusy]     = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function doStamp() {
     if (!lookup.trim()) { setMsg("Enter a phone number or email."); return; }
@@ -608,7 +715,7 @@ function Overview({ stats, business }: { stats: BusinessStats | null; business: 
     <section className="pt-2 space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <Stat label="Total Customers" value={stats?.totalCustomers ?? 0} />
-        <Stat label="Total Stamps"    value={stats?.totalVisits ?? 0} />
+        <Stat label="Total Stamps" value={stats?.totalVisits ?? 0} />
         <Stat label="Rewards Claimed" value={stats?.totalRedemptions ?? 0} />
         <Stat label="Redemption Rate" value={stats ? `${stats.redemptionRate}%` : "0%"} />
       </div>
@@ -677,12 +784,6 @@ function Overview({ stats, business }: { stats: BusinessStats | null; business: 
           )}
         </ul>
       </div>
-
-      {/* quick stamp counter QR access */}
-      <div className={cardCls}>
-        <p className="text-xs text-neutral-400 mb-2 font-medium">Quick Counter QR</p>
-        <CounterQrCard businessId={business.id} size={180} />
-      </div>
     </section>
   );
 }
@@ -702,12 +803,12 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 
 // ─── Redeem tab ───────────────────────────────────────────────────────────────
 function RedeemPanel({ businessId }: { businessId: string }) {
-  const [qrText, setQrText]   = useState("");
+  const [qrText, setQrText] = useState("");
   const [contact, setContact] = useState("");
-  const [card, setCard]       = useState<StampCard | null>(null);
-  const [reward, setReward]   = useState("the free reward");
+  const [card, setCard] = useState<StampCard | null>(null);
+  const [reward, setReward] = useState("the free reward");
   const [checking, setChecking] = useState(false);
-  const [msg, setMsg]         = useState<{ text: string; kind: "ok" | "error" } | null>(null);
+  const [msg, setMsg] = useState<{ text: string; kind: "ok" | "error" } | null>(null);
 
   async function checkReward(code: string) {
     setCard(null); setMsg(null); setChecking(true);
@@ -810,16 +911,16 @@ function RedeemPanel({ businessId }: { businessId: string }) {
 // ─── Settings tab contents ────────────────────────────────────────────────────
 function RulesForm({ business, onSaved }: { business: Business; onSaved: (b: Business) => void }) {
   const [saving, setSaving] = useState(false);
-  const [toast, setToast]   = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
   const { register, handleSubmit, formState: { errors } } = useForm<
     z.input<typeof loyaltyRuleSchema>, unknown, z.output<typeof loyaltyRuleSchema>
   >({
     resolver: zodResolver(loyaltyRuleSchema),
     defaultValues: {
-      requiredStamps:    business.loyaltyRule.requiredStamps,
+      requiredStamps: business.loyaltyRule.requiredStamps,
       rewardDescription: business.loyaltyRule.rewardDescription,
-      expiresAt:         business.loyaltyRule.expiresAt ?? "",
-      minSpend:          business.loyaltyRule.minSpend ?? "",
+      expiresAt: business.loyaltyRule.expiresAt ?? "",
+      minSpend: business.loyaltyRule.minSpend ?? "",
     },
   });
   return (
@@ -872,7 +973,7 @@ function RulesForm({ business, onSaved }: { business: Business; onSaved: (b: Bus
 function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: Business) => void }) {
   const p = business.profile ?? {};
   const [saving, setSaving] = useState(false);
-  const [toast, setToast]   = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
   const { register, handleSubmit, formState: { errors } } = useForm<
     z.input<typeof profileSchema>, unknown, z.output<typeof profileSchema>
   >({

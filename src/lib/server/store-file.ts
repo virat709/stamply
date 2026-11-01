@@ -206,7 +206,8 @@ class FileStore implements Store {
   async stampWithToken(businessId: string, code: string, customerId: string): Promise<StampCard | string> {
     const db = read();
     const key = `${code.toUpperCase()}_${businessId}`;
-    const t = db.tokens[key];
+    const keyLower = `${code.toUpperCase()}_${(businessId || "").toLowerCase()}`;
+    const t = db.tokens[key] ?? db.tokens[keyLower];
     if (!t) return "Invalid code. Ask staff for the current code.";
     if (t.used) return "This code has already been used.";
     if (+new Date(t.expiresAt) < Date.now()) return "This code has expired.";
@@ -268,17 +269,22 @@ class FileStore implements Store {
 
   async createToken(businessId: string): Promise<StampToken> {
     const db = read();
-    // Fresh code every mint; collision across history is astronomically unlikely
-    // but the map keeps every old token so "used" stays forbidden forever.
+    const bId = (businessId || "").toLowerCase();
     let code = Math.random().toString(36).slice(2, 8).toUpperCase();
-    while (db.tokens[`${code}_${businessId}`]) code = Math.random().toString(36).slice(2, 8).toUpperCase();
+    while (db.tokens[`${code}_${businessId}`] || db.tokens[`${code}_${bId}`]) {
+      code = Math.random().toString(36).slice(2, 8).toUpperCase();
+    }
     const t: StampToken = { code, businessId, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(), used: false };
     db.tokens[`${code}_${businessId}`] = t;
+    db.tokens[`${code}_${bId}`] = t;
     write(db);
     return t;
   }
   async getToken(businessId: string, code: string): Promise<StampToken | null> {
-    return read().tokens[`${code.toUpperCase()}_${businessId}`] ?? null;
+    const c = (code || "").toUpperCase();
+    const bId = (businessId || "").toLowerCase();
+    const db = read();
+    return db.tokens[`${c}_${businessId}`] ?? db.tokens[`${c}_${bId}`] ?? null;
   }
 
   async createVerification(businessId: string, customerId: string, name: string, phone: string): Promise<VerificationRequest> {
