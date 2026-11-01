@@ -59,10 +59,12 @@ function JoinInner() {
   }, [savedContact, reset]);
 
   useEffect(() => {
-    getBusiness(params.businessId).then((b) => {
-      if (!b) setNotFound(true);
-      setBusiness(b);
-    });
+    getBusiness(params.businessId)
+      .then((b) => {
+        if (!b) setNotFound(true);
+        setBusiness(b);
+      })
+      .catch(() => setNotFound(true));
   }, [params.businessId]);
 
   async function onSubmit(values: ContactInput) {

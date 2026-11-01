@@ -60,7 +60,7 @@ function CardInner() {
   useEffect(() => {
     if (!card || card.businessId === businessIdRef.current) return;
     businessIdRef.current = card.businessId;
-    getBusiness(card.businessId).then(setBusiness);
+    getBusiness(card.businessId).then(setBusiness).catch(() => {});
   }, [card]);
 
   useEffect(() => {

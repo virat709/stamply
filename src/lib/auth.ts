@@ -68,12 +68,28 @@ function startAuthListener(): void {
 export async function currentOwner(): Promise<string | null> {
   if (isFirebaseConfigured && auth) {
     startAuthListener();
+    if (auth.currentUser) {
+      cachedOwner = { uid: auth.currentUser.uid };
+      setSession(auth.currentUser.uid);
+      return auth.currentUser.uid;
+    }
+    if (typeof auth.authStateReady === "function") {
+      await auth.authStateReady();
+      const u = auth.currentUser as User | null;
+      cachedOwner = u ? { uid: u.uid } : null;
+      if (u) setSession(u.uid);
+      else clearSession();
+      return u ? u.uid : null;
+    }
     if (cachedOwner !== undefined) return cachedOwner ? cachedOwner.uid : null;
     const authInstance = auth;
     // First call on this page load — await the listener's first event
     // (falls back to currentUser after 4s if devtools/network stalls).
     const user = await new Promise<User | null>((resolve) => {
-      const unsub = onAuthStateChanged(authInstance, (u) => resolve(u));
+      const unsub = onAuthStateChanged(authInstance, (u) => {
+        unsub();
+        resolve(u);
+      });
       setTimeout(() => {
         unsub();
         resolve(authInstance.currentUser);
@@ -98,7 +114,7 @@ export async function currentOwner(): Promise<string | null> {
 }
 
 export async function signOutOwner(): Promise<void> {
-  cachedOwner = undefined;
+  cachedOwner = null;
   clearSession();
   if (isFirebaseConfigured && auth) await signOut(auth);
 }
@@ -126,6 +142,7 @@ export interface AuthResult {
   ok: boolean;
   error?: string;
   uid?: string;
+  business?: Business;
 }
 
 export async function signUpOwner(restaurantName: string, email: string, password: string): Promise<AuthResult> {
@@ -138,6 +155,7 @@ export async function signUpOwner(restaurantName: string, email: string, passwor
     if (isFirebaseConfigured && auth) {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       uid = cred.user.uid;
+      cachedOwner = { uid };
       setSession(uid);
     } else {
       const users = demoUsers();
@@ -147,10 +165,11 @@ export async function signUpOwner(restaurantName: string, email: string, passwor
       uid = crypto.randomUUID();
       users.push({ id: uid, email, password });
       demoWrite(users);
+      cachedOwner = { uid };
       setSession(uid);
     }
-    await createBusiness(uid, name);
-    return { ok: true, uid };
+    const business = await createBusiness(uid, name);
+    return { ok: true, uid, business };
   } catch (e) {
     return { ok: false, error: friendlyAuthError(e) };
   }
@@ -167,6 +186,7 @@ export async function signInOwnerWithGoogle(): Promise<AuthResult> {
   provider.setCustomParameters({ prompt: "select_account" });
   try {
     const cred = await signInWithPopup(auth, provider);
+    cachedOwner = { uid: cred.user.uid };
     setSession(cred.user.uid);
     return { ok: true, uid: cred.user.uid };
   } catch (e: unknown) {
@@ -190,11 +210,13 @@ export async function signInOwner(email: string, password: string): Promise<Auth
   try {
     if (isFirebaseConfigured && auth) {
       const cred = await signInWithEmailAndPassword(auth, email, password);
+      cachedOwner = { uid: cred.user.uid };
       setSession(cred.user.uid);
       return { ok: true, uid: cred.user.uid };
     }
     const user = demoUsers().find((u) => u.email === email);
     if (!user || user.password !== password) return { ok: false, error: "Wrong email or password." };
+    cachedOwner = { uid: user.id };
     setSession(user.id);
     return { ok: true, uid: user.id };
   } catch (e) {
@@ -204,8 +226,12 @@ export async function signInOwner(email: string, password: string): Promise<Auth
 
 /** Where should this owner land after sign-in? */
 export async function firstDashboardPath(uid: string): Promise<string> {
-  const businesses = await getOwnerBusinesses(uid);
-  if (businesses.length > 0) return `/dashboard/${businesses[0].id}`;
+  try {
+    const businesses = await getOwnerBusinesses(uid);
+    if (businesses && businesses.length > 0) return `/dashboard/${businesses[0].id}`;
+  } catch {
+    /* fallback to onboarding if fetching businesses failed */
+  }
   return "/onboarding";
 }
 

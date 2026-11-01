@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Business, BusinessStats, Customer, Review, StampCard, StampToken, VerificationRequest } from "@/lib/types";
@@ -37,14 +38,39 @@ function now(): string {
 }
 
 function read(): FileDB {
-  return globalThis.__stamplyFileDb ?? (globalThis.__stamplyFileDb = blank());
+  if (globalThis.__stamplyFileDb) return globalThis.__stamplyFileDb;
+  try {
+    if (fsSync.existsSync(DATA_FILE)) {
+      const content = fsSync.readFileSync(DATA_FILE, "utf-8");
+      if (content.trim()) {
+        const parsed = JSON.parse(content);
+        globalThis.__stamplyFileDb = {
+          ...blank(),
+          ...parsed,
+          businesses: Array.isArray(parsed.businesses) ? parsed.businesses : [],
+          customers: Array.isArray(parsed.customers) ? parsed.customers : [],
+          cards: Array.isArray(parsed.cards) ? parsed.cards : [],
+          visits: Array.isArray(parsed.visits) ? parsed.visits : [],
+          tokens: parsed.tokens && typeof parsed.tokens === "object" ? parsed.tokens : {},
+          reviews: Array.isArray(parsed.reviews) ? parsed.reviews : [],
+          verifications: parsed.verifications && typeof parsed.verifications === "object" ? parsed.verifications : {},
+        };
+        return globalThis.__stamplyFileDb!;
+      }
+    }
+  } catch (err) {
+    console.error("Error reading db.json:", err);
+  }
+  return (globalThis.__stamplyFileDb = blank());
 }
 
 function write(db: FileDB): void {
   globalThis.__stamplyFileDb = db;
   fs.mkdir(DATA_DIR, { recursive: true }).then(() =>
-    fs.writeFile(DATA_FILE, JSON.stringify(db))
-  ).catch(() => {});
+    fs.writeFile(DATA_FILE, JSON.stringify(db, null, 2), "utf-8")
+  ).catch((err) => {
+    console.error("Error writing db.json:", err);
+  });
 }
 
 declare global {
@@ -75,7 +101,8 @@ class FileStore implements Store {
   mode = "file" as const;
 
   async getBusiness(id: string): Promise<Business | null> {
-    return read().businesses.find((b) => b.id === id) ?? null;
+    const lower = (id ?? "").toLowerCase();
+    return read().businesses.find((b) => b.id === id || b.id.toLowerCase() === lower) ?? null;
   }
   async listBusinesses(): Promise<Business[]> {
     return read().businesses;

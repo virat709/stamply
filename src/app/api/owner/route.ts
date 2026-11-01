@@ -64,11 +64,17 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? "");
+    const store = getStore();
+
+    if (action === "seed-demo") {
+      await store.seedDemo();
+      return NextResponse.json({ ok: true });
+    }
+
     const businessId = body.businessId ? String(body.businessId) : undefined;
     const g = businessId ? await guard(req, businessId) : await guard(req);
     if (g instanceof NextResponse) return g;
     const { uid } = g;
-    const store = getStore();
 
     switch (action) {
       case "create-business": {
@@ -82,10 +88,6 @@ export async function POST(req: Request) {
         const b = body.business as Record<string, unknown>;
         if (!b || typeof b.id !== "string") return NextResponse.json({ error: "Invalid business." }, { status: 400 });
         await store.saveBusiness(b as never, uid);
-        return NextResponse.json({ ok: true });
-      }
-      case "seed-demo": {
-        await store.seedDemo();
         return NextResponse.json({ ok: true });
       }
       case "mint-token": {

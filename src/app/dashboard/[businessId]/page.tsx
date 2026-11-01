@@ -76,14 +76,16 @@ export default function Dashboard() {
   const [ownerUid, setOwnerUid] = useState<string | null>(null);
 
   useEffect(() => {
-    getBusiness(params.businessId).then((b) => {
-      if (!b) setNotFound(true);
-      setBusiness(b);
-    });
+    getBusiness(params.businessId)
+      .then((b) => {
+        if (!b) setNotFound(true);
+        setBusiness(b);
+      })
+      .catch(() => setNotFound(true));
   }, [params.businessId]);
 
   useEffect(() => {
-    currentOwner().then(setOwnerUid);
+    currentOwner().then(setOwnerUid).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -104,7 +106,9 @@ export default function Dashboard() {
   }, [business]);
 
   useEffect(() => {
-    if (tab === "overview") getBusinessStats(params.businessId).then(setStats);
+    if (tab === "overview") {
+      getBusinessStats(params.businessId).then(setStats).catch(() => setStats(null));
+    }
   }, [tab, params.businessId]);
 
   if (notFound)
@@ -643,8 +647,12 @@ function VerificationPanel({ businessId }: { businessId: string }) {
   useEffect(() => {
     // auto-refresh so new customer requests appear without a manual reload
     const t = setInterval(async () => {
-      const v = await listVerificationRequests(businessId);
-      setRequests(v);
+      try {
+        const v = await listVerificationRequests(businessId);
+        setRequests(v);
+      } catch {
+        /* ignore transient polling errors */
+      }
     }, 3000);
     return () => clearInterval(t);
   }, [businessId]);
@@ -746,7 +754,7 @@ function ReviewsPanel({ businessId }: { businessId: string }) {
   const [reviews, setReviews] = useState<Review[] | null>(null);
 
   useEffect(() => {
-    listReviews(businessId).then(setReviews);
+    listReviews(businessId).then(setReviews).catch(() => setReviews([]));
   }, [businessId]);
 
   const average = reviews && reviews.length > 0 ? Math.round((reviews.reduce((s, r) => s + r.rating, 0) / reviews.length) * 10) / 10 : null;

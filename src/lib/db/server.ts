@@ -12,9 +12,14 @@ import type {
 // Firebase keys the app stays on the localStorage demo (db/local.ts).
 
 async function authHeader(): Promise<Record<string, string>> {
-  if (isFirebaseConfigured && auth?.currentUser) {
+  if (isFirebaseConfigured && auth) {
     try {
-      return { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` };
+      if (typeof auth.authStateReady === "function") {
+        await auth.authStateReady();
+      }
+      if (auth.currentUser) {
+        return { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` };
+      }
     } catch {
       /* fall through */
     }
@@ -58,25 +63,33 @@ const BUSINESS_URL_FIELDS = (b: Business) => ({
 });
 
 export async function getBusiness(id: string): Promise<Business | null> {
+  if (!id) return null;
   try {
-    // Public read — straight from Firestore (rules allow businesses read).
+    const { business } = await api<{ business: Business }>(`/api/business/${encodeURIComponent(id)}`);
+    if (business) return business;
+  } catch {
+    /* fallback to direct firestore read if API route fails */
+  }
+  try {
+    // Public read fallback — straight from Firestore (if client firestore is populated)
     if (fsClient) {
       const snap = await getDoc(doc(fsClient, "businesses", id));
       if (snap.exists()) return { id: snap.id, ...snap.data() } as Business;
     }
-    return null;
   } catch {
-    return null;
+    /* fall through */
   }
+  return null;
 }
 
 export const listBusinesses = async (): Promise<Business[]> => {
   throw new Error("listBusinesses is not available in server mode.");
 };
 
-export async function getOwnerBusinesses(): Promise<Business[]> {
+export async function getOwnerBusinesses(_ownerId?: string): Promise<Business[]> {
+  void _ownerId;
   const { businesses } = await api<{ businesses: Business[] }>("/api/owner?kind=businesses");
-  return businesses;
+  return businesses ?? [];
 }
 
 export async function createBusiness(_ownerId: string, name: string): Promise<Business> {
