@@ -265,11 +265,16 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
         const fresh = await getStampToken(businessId, tokenCode);
         if (fresh?.used) {
           setToken({ ...fresh });
+          setToast({ msg: "✓ Customer collected stamp! Rotating QR code…" });
+          // Automatically change the QR code after scan is completed
+          setTimeout(() => {
+            generate();
+          }, 800);
         }
       } catch {
         /* ignore network poll glitches */
       }
-    }, 1500);
+    }, 1200);
     return () => clearInterval(t);
   }, [businessId, tokenCode, tokenUsed]);
 

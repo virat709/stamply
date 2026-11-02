@@ -91,8 +91,17 @@ function JoinInner() {
       try {
         localStorage.setItem(
           `currentCustomer_${params.businessId}`,
-          JSON.stringify({ customerId: res.customerId, cardId: res.cardId, name: values.name, phone: values.phoneNumber || "" })
+          JSON.stringify({
+            customerId: res.customerId,
+            cardId: res.cardId,
+            name: values.name,
+            phone: values.phoneNumber || "",
+            cardToken: (res as { cardToken?: string }).cardToken || "",
+          })
         );
+        if ((res as { cardToken?: string }).cardToken) {
+          localStorage.setItem(`cardToken_${res.cardId}`, (res as { cardToken?: string }).cardToken!);
+        }
       } catch {
         /* private mode — the flow still works via cookies */
       }

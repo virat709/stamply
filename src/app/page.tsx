@@ -133,22 +133,24 @@ export default function Home() {
         initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
         className="fixed top-4 inset-x-0 z-50 flex justify-center px-4"
       >
-        <div className="glass rounded-full flex items-center gap-6 pl-5 pr-2.5 py-2">
-          <Link href="/" className="flex items-center gap-2.5">
-            <StamplyMark size={30} />
-            <span className="font-bold text-lg tracking-tight">Stamply<span className="text-[#d4af37]">.</span></span>
+        <div className="glass rounded-full flex items-center justify-between sm:justify-start gap-2.5 sm:gap-6 pl-4 sm:pl-5 pr-2 py-1.5 sm:py-2 max-w-xl w-full sm:w-auto shadow-lg">
+          <Link href="/" className="flex items-center gap-2">
+            <StamplyMark size={28} />
+            <span className="font-bold text-base sm:text-lg tracking-tight">Stamply<span className="text-[#d4af37]">.</span></span>
           </Link>
           <div className="hidden sm:flex items-center gap-5 text-sm text-neutral-400">
             <a href="#magic" className="hover:text-[#f0d98c] transition">The magic</a>
             <a href="#how" className="hover:text-[#f0d98c] transition">How it works</a>
             <a href="#proof" className="hover:text-[#f0d98c] transition">Why it wins</a>
           </div>
-          <Link href="/login" className="rounded-full px-4 py-2 text-sm font-semibold text-neutral-300 hover:text-[#f0d98c] transition">
-            Sign in
-          </Link>
-          <Link href="/dashboard/demo-cafe" className="btn-gold rounded-full px-5 py-2 text-sm font-bold">
-            Owner console
-          </Link>
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <Link href="/login" className="rounded-full px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-neutral-300 hover:text-[#f0d98c] transition cursor-pointer">
+              Sign in
+            </Link>
+            <Link href="/login" className="btn-gold rounded-full px-3.5 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-sm font-bold cursor-pointer">
+              Console
+            </Link>
+          </div>
         </div>
       </motion.nav>
 

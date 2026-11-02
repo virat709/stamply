@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -13,9 +13,12 @@ export default function Onboarding() {
   const [_uid, setUid] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    let active = true;
     currentOwner().then((uid) => {
+      if (!active) return;
       if (!uid) {
         router.replace("/login");
         return;
@@ -23,14 +26,26 @@ export default function Onboarding() {
       setUid(uid);
       setReady(true);
     });
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!_uid || !name.trim()) return;
+    const cleanName = name.trim();
+    if (!cleanName) return;
     setBusy(true);
     try {
-      const b = await createRestaurantForOwner(_uid, name);
+      let uid = _uid;
+      if (!uid) {
+        uid = await currentOwner();
+      }
+      if (!uid) {
+        router.replace("/login");
+        return;
+      }
+      const b = await createRestaurantForOwner(uid, cleanName);
       router.push(`/dashboard/${b.id}`);
     } catch {
       setToast({ msg: "Could not create the restaurant — try again", kind: "error" });
@@ -67,32 +82,31 @@ export default function Onboarding() {
             </div>
 
             <form onSubmit={submit} className="mt-6 space-y-4">
-              <div>
+              <div onClick={() => inputRef.current?.focus()}>
                 <label className="label-lux cursor-pointer" htmlFor="ob-name">Restaurant name</label>
                 <input
+                  ref={inputRef}
                   id="ob-name"
                   type="text"
-                  autoFocus
                   autoComplete="organization"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Ember & Oak"
                   required
-                  className="input-lux w-full rounded-xl px-4 py-3.5 mt-1.5 relative z-20 cursor-text"
+                  className="input-lux w-full rounded-xl px-4 py-3.5 mt-1.5 relative z-30 cursor-text touch-manipulation text-base"
                 />
               </div>
-              <motion.button
+              <button
                 type="submit"
-                disabled={busy || !ready}
-                whileTap={{ scale: 0.97 }}
-                className="btn-gold w-full rounded-full py-4 font-bold relative z-20 cursor-pointer disabled:cursor-not-allowed"
+                disabled={busy}
+                className="btn-gold w-full rounded-full py-4 font-bold relative z-30 cursor-pointer active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation select-none"
               >
                 {busy ? "Opening your console…" : (
-                  <span className="inline-flex items-center gap-2"><IconSparkle size={16} /> Create my console →</span>
+                  <span className="inline-flex items-center gap-2 justify-center"><IconSparkle size={16} /> Create my console →</span>
                 )}
-              </motion.button>
+              </button>
             </form>
-            <div className="mt-5 flex items-center justify-between text-xs text-neutral-500 relative z-20">
+            <div className="mt-5 flex items-center justify-between text-xs text-neutral-500 relative z-30">
               <Link href="/" className="hover:text-neutral-300">← Back home</Link>
               <button
                 type="button"

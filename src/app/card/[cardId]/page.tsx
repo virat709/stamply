@@ -31,24 +31,29 @@ function CardInner() {
 
   useEffect(() => {
     let alive = true;
-    let unclaimedOnce = false;
+    let notFoundRetries = 0;
     async function load() {
       try {
         const c = await getCard(params.cardId);
         if (!alive) return;
         setCard(c);
         setUnclaimed(false);
+        setNotFound(false);
       } catch (e) {
         if (!alive) return;
         const status = (e as Error & { status?: number }).status;
-        if (status === 404) setNotFound(true);
-        else if (status === 401) {
+        if (status === 404) {
+          // Grace period: retry 4 times (6s) before declaring 404 in case database write is settling
+          if (notFoundRetries < 4) {
+            notFoundRetries++;
+            return;
+          }
+          setNotFound(true);
+        } else if (status === 401) {
           setUnclaimed(true);
-          unclaimedOnce = true;
         }
       }
     }
-    void unclaimedOnce;
     load();
     const t = setInterval(load, 1500);
     return () => {
@@ -61,7 +66,7 @@ function CardInner() {
   useEffect(() => {
     if (!card || card.businessId === businessIdRef.current) return;
     businessIdRef.current = card.businessId;
-    getBusiness(card.businessId).then(setBusiness).catch(() => {});
+    getBusiness(card.businessId).then(setBusiness).catch(() => { });
   }, [card]);
 
   useEffect(() => {

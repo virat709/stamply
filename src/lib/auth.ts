@@ -8,6 +8,9 @@ import {
   GoogleAuthProvider,
   onAuthStateChanged,
   signOut,
+  sendPasswordResetEmail,
+  setPersistence,
+  browserLocalPersistence,
   type User,
 } from "firebase/auth";
 import { auth, isFirebaseConfigured } from "@/lib/firebase";
@@ -58,6 +61,7 @@ let listenerStarted = false;
 function startAuthListener(): void {
   if (listenerStarted || !auth) return;
   listenerStarted = true;
+  setPersistence(auth, browserLocalPersistence).catch(() => {});
   onAuthStateChanged(auth, (user) => {
     cachedOwner = user ? { uid: user.uid } : null;
     if (user) setSession(user.uid);
@@ -131,8 +135,11 @@ function friendlyAuthError(e: unknown): string {
     case "auth/too-many-requests": return "Too many tries — wait a moment and try again.";
     case "auth/popup-closed-by-user": return "Google sign-in was cancelled.";
     case "auth/cancelled-popup-request": return "Google sign-in was cancelled.";
-    case "auth/operation-not-allowed": return "Google sign-in isn't enabled for this project yet.";
-    case "auth/unauthorized-domain": return "This app's domain isn't authorized for Google sign-in.";
+    case "auth/operation-not-allowed": return "Google sign-in isn't enabled for this project yet in Firebase Console.";
+    case "auth/unauthorized-domain": {
+      const host = typeof window !== "undefined" ? window.location.hostname : "";
+      return `Domain '${host || "current"}' is not authorized for Google sign-in in Firebase Console.`;
+    }
     case "auth/account-exists-with-different-credential": return "This email is registered with email and password — use that sign-in instead.";
     default: return (e as Error).message?.replace("Firebase: ", "") ?? "Something went wrong.";
   }
@@ -176,15 +183,33 @@ export async function signUpOwner(restaurantName: string, email: string, passwor
   }
 }
 
-/** Google / Gmail one-tap sign-in for owners. Works for both first-time
- *  sign-ups and returning owners — if they have no business yet they land on
- *  /onboarding to name it (login page handles the routing). */
+export function isMobileBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 0 && /Macintosh/.test(navigator.userAgent));
+}
+
+/** Google / Gmail one-tap sign-in for owners. Uses direct redirect on mobile
+ *  browsers for guaranteed reliability, and popup with auto-redirect fallback
+ *  on desktop. */
 export async function signInOwnerWithGoogle(): Promise<AuthResult> {
   if (!isFirebaseConfigured || !auth) {
     return { ok: false, error: "Google sign-in needs the connected Firebase project." };
   }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
+
+  // On mobile browsers, popups fail or get blocked — redirect directly
+  if (isMobileBrowser()) {
+    try {
+      await signInWithRedirect(auth, provider);
+      return { ok: false, redirecting: true, error: "Redirecting to Google…" };
+    } catch (e) {
+      return { ok: false, error: friendlyAuthError(e) };
+    }
+  }
+
+  // On desktop browsers, try popup first
   try {
     const cred = await signInWithPopup(auth, provider);
     cachedOwner = { uid: cred.user.uid };
@@ -192,21 +217,16 @@ export async function signInOwnerWithGoogle(): Promise<AuthResult> {
     return { ok: true, uid: cred.user.uid };
   } catch (e: unknown) {
     const code = (e as { code?: string }).code ?? "";
-    // Some browsers/settings block popups or fail on mobile — fall back to a full-page redirect.
-    if (
-      code === "auth/popup-blocked" ||
-      code === "auth/cancelled-popup-request" ||
-      code === "auth/internal-error"
-    ) {
-      try {
-        await signInWithRedirect(auth, provider);
-        // the page reloads before this returns — tell the UI something gentle
-        return { ok: false, redirecting: true, error: "Redirecting to Google…" };
-      } catch (redirectErr) {
-        return { ok: false, error: friendlyAuthError(redirectErr) };
-      }
+    if (code === "auth/popup-closed-by-user") {
+      return { ok: false, error: "Google sign-in was cancelled." };
     }
-    return { ok: false, error: friendlyAuthError(e) };
+    // Any other failure (popup blocked, cross-origin isolation, internal error, etc.): fall back to redirect
+    try {
+      await signInWithRedirect(auth, provider);
+      return { ok: false, redirecting: true, error: "Redirecting to Google…" };
+    } catch (redirectErr) {
+      return { ok: false, error: friendlyAuthError(redirectErr) };
+    }
   }
 }
 
@@ -241,6 +261,22 @@ export async function signInOwner(email: string, password: string): Promise<Auth
     cachedOwner = { uid: user.id };
     setSession(user.id);
     return { ok: true, uid: user.id };
+  } catch (e) {
+    return { ok: false, error: friendlyAuthError(e) };
+  }
+}
+
+export async function resetOwnerPassword(email: string): Promise<AuthResult> {
+  email = email.trim().toLowerCase();
+  if (!email) return { ok: false, error: "Please enter your email address." };
+  try {
+    if (isFirebaseConfigured && auth) {
+      await sendPasswordResetEmail(auth, email);
+      return { ok: true };
+    }
+    const user = demoUsers().find((u) => u.email === email);
+    if (!user) return { ok: false, error: "No account found with that email." };
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: friendlyAuthError(e) };
   }

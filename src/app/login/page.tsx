@@ -4,11 +4,11 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { signInOwner, signUpOwner, signInOwnerWithGoogle, handleGoogleRedirectResult, firstDashboardPath, currentOwner } from "@/lib/auth";
+import { signInOwner, signUpOwner, signInOwnerWithGoogle, handleGoogleRedirectResult, firstDashboardPath, currentOwner, resetOwnerPassword } from "@/lib/auth";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { StamplyMark, IconMail, IconQr, IconShield, IconChart, Toast } from "@/components/ui";
 
-const inputCls = "input-lux w-full rounded-xl pl-11 pr-4 py-3.5";
+const inputCls = "input-lux w-full rounded-xl pl-11 pr-4 py-3.5 text-base touch-manipulation";
 const labelCls = "label-lux";
 
 /** Official multi-color Google "G" mark. */
@@ -33,6 +33,30 @@ export default function Login() {
   const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setForgotBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await resetOwnerPassword(forgotEmail);
+      if (!res.ok) {
+        setError(res.error ?? "Could not send reset email.");
+        return;
+      }
+      setForgotSuccess(true);
+    } catch (e) {
+      setError((e as Error).message || "Something went wrong.");
+    } finally {
+      setForgotBusy(false);
+    }
+  }
 
   // Already signed in (e.g. returned from a Google redirect)? Go home.
   useEffect(() => {
@@ -60,7 +84,8 @@ export default function Login() {
     try {
       const res = await signInOwnerWithGoogle();
       if (res.redirecting) {
-        setInfo("Redirecting to Google…");
+        setInfo("Opening Google sign-in…");
+        setTimeout(() => setGoogleBusy(false), 8000);
         return;
       }
       if (!res.ok) {
@@ -177,132 +202,224 @@ export default function Login() {
                 <span className="font-bold text-lg">Stamply<span className="text-[#d4af37]">.</span></span>
               </div>
 
-              <div className="glass rounded-2xl p-1 flex text-sm relative z-10">
-                {(["signin", "signup"] as const).map((m) => (
+            {forgotMode ? (
+              <form onSubmit={handleResetPassword} className="mt-2 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] tracking-[0.3em] uppercase text-[#d4af37]">Account recovery</p>
+                    <h2 className="text-xl font-bold mt-0.5" style={{ fontFamily: "var(--font-display)" }}>
+                      Reset password
+                    </h2>
+                  </div>
                   <button
-                    key={m}
                     type="button"
-                    onClick={() => { setMode(m); setError(null); }}
-                    className={`relative flex-1 rounded-xl py-2.5 font-semibold transition-colors cursor-pointer ${mode === m ? "text-black" : "text-neutral-400 hover:text-neutral-200"}`}
+                    onClick={() => { setForgotMode(false); setError(null); setInfo(null); setForgotSuccess(false); }}
+                    className="text-xs text-neutral-400 hover:text-neutral-200 cursor-pointer"
                   >
-                    {mode === m && (
-                      <motion.span
-                        layoutId="auth-pill"
-                        className="absolute inset-0 rounded-xl btn-gold"
-                        style={{ boxShadow: "none" }}
-                      />
-                    )}
-                    <span className="relative">{m === "signin" ? "Sign in" : "Create account"}</span>
+                    ← Back to sign in
                   </button>
-                ))}
-              </div>
+                </div>
+                <p className="text-xs text-neutral-400 leading-relaxed">
+                  Enter your account email and we&apos;ll send you an instant link to choose a new password.
+                </p>
 
-            <form onSubmit={submit} className="mt-6 space-y-4">
-              <AnimatePresence initial={false} mode="popLayout">
-                {mode === "signup" && (
+                <div>
+                  <label className={labelCls} htmlFor="forgot-email">Your email</label>
+                  <div className="mt-1.5 relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconMail size={17} /></span>
+                    <input
+                      id="forgot-email"
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="owner@yourrestaurant.com"
+                      required
+                      autoFocus
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+
+                {forgotSuccess && (
                   <motion.div
-                    key="restaurant"
-                    initial={{ opacity: 0, height: 0, marginTop: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300"
                   >
-                    <label className={labelCls} htmlFor="auth-restaurant">Restaurant name</label>
+                    ✓ Password reset link sent! Check your email inbox (and spam folder) in a few seconds.
+                  </motion.div>
+                )}
+
+                {error && (
+                  <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="text-sm text-red-400 overflow-hidden">
+                    {error}
+                  </motion.p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={forgotBusy || forgotSuccess}
+                  className="btn-gold w-full rounded-full py-3.5 font-bold cursor-pointer active:scale-[0.98] transition-transform disabled:opacity-60 relative z-30 touch-manipulation select-none"
+                >
+                  {forgotBusy ? "Sending reset link…" : "Send password reset link →"}
+                </button>
+              </form>
+            ) : (
+              <>
+                <div className="glass rounded-2xl p-1 flex text-sm relative z-10">
+                  {(["signin", "signup"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => { setMode(m); setError(null); }}
+                      className={`relative flex-1 rounded-xl py-2.5 font-semibold transition-colors cursor-pointer ${mode === m ? "text-black" : "text-neutral-400 hover:text-neutral-200"}`}
+                    >
+                      {mode === m && (
+                        <motion.span
+                          layoutId="auth-pill"
+                          className="absolute inset-0 rounded-xl btn-gold"
+                          style={{ boxShadow: "none" }}
+                        />
+                      )}
+                      <span className="relative">{m === "signin" ? "Sign in" : "Create account"}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <form onSubmit={submit} className="mt-6 space-y-4">
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {mode === "signup" && (
+                      <motion.div
+                        key="restaurant"
+                        initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <label className={labelCls} htmlFor="auth-restaurant">Restaurant name</label>
+                        <div className="mt-1.5 relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-[15px]">🏪</span>
+                          <input
+                            id="auth-restaurant"
+                            value={restaurantName}
+                            onChange={(e) => setRestaurantName(e.target.value)}
+                            placeholder="Ember & Oak"
+                            required
+                            className={inputCls}
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div>
+                    <label className={labelCls} htmlFor="auth-email">Email</label>
                     <div className="mt-1.5 relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-[15px]">🏪</span>
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconMail size={17} /></span>
                       <input
-                        id="auth-restaurant"
-                        value={restaurantName}
-                        onChange={(e) => setRestaurantName(e.target.value)}
-                        placeholder="Ember & Oak"
+                        id="auth-email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="owner@yourrestaurant.com"
                         required
                         className={inputCls}
                       />
                     </div>
-                  </motion.div>
+                  </div>
+                  <div>
+                    <label className={labelCls} htmlFor="auth-password">Password</label>
+                    <div className="mt-1.5 relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-[15px]">🔑</span>
+                      <input
+                        id="auth-password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="At least 6 characters"
+                        required
+                        minLength={6}
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+
+                  {mode === "signin" && (
+                    <div className="flex items-center justify-between text-xs pt-0.5">
+                      <label className="flex items-center gap-2 cursor-pointer text-neutral-400 hover:text-neutral-200">
+                        <input
+                          type="checkbox"
+                          checked={rememberMe}
+                          onChange={(e) => setRememberMe(e.target.checked)}
+                          className="rounded border-white/20 bg-white/10 text-[#d4af37] focus:ring-0 cursor-pointer"
+                        />
+                        <span>Stay signed in</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotMode(true);
+                          setError(null);
+                          setInfo(null);
+                          setForgotSuccess(false);
+                          if (email) setForgotEmail(email);
+                        }}
+                        className="text-[#d4af37] hover:underline cursor-pointer font-medium"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                  )}
+
+                  {error && (
+                    <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="text-sm text-red-400 overflow-hidden">
+                      {error}
+                    </motion.p>
+                  )}
+                  {info && (
+                    <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="text-sm text-[#f0d98c] overflow-hidden">
+                      {info}
+                    </motion.p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="btn-gold w-full rounded-full py-4 font-bold cursor-pointer active:scale-[0.98] transition-transform disabled:opacity-60 relative z-30 touch-manipulation select-none"
+                  >
+                    {busy
+                      ? (mode === "signup" ? "Building your console…" : "Unlocking…")
+                      : (mode === "signup" ? "Create my restaurant →" : "Sign in →")}
+                  </button>
+
+                  <p className="text-xs text-neutral-500 text-center leading-relaxed">
+                    {mode === "signup"
+                      ? "One account per restaurant — your customers only see your brand."
+                      : "New here? Switch to “Create account” — it sets up your whole console."}
+                  </p>
+                </form>
+
+                {isFirebaseConfigured && (
+                  <>
+                    <div className="mt-5 flex items-center gap-3 text-[10px] tracking-[0.25em] uppercase text-neutral-600">
+                      <span className="h-px flex-1 bg-white/10" />
+                      or
+                      <span className="h-px flex-1 bg-white/10" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={google}
+                      disabled={busy || googleBusy}
+                      className="mt-4 w-full rounded-full bg-white text-black py-3.5 font-bold flex items-center justify-center gap-3 hover:bg-neutral-200 active:scale-[0.98] transition-all disabled:opacity-50 relative z-30 cursor-pointer disabled:cursor-not-allowed shadow-md touch-manipulation select-none"
+                    >
+                      <GoogleG />
+                      {googleBusy ? "Opening Google…" : "Continue with Google"}
+                    </button>
+                    <p className="mt-2.5 text-xs text-neutral-500 text-center">
+                      Gmail or Google Workspace — first time? You&apos;ll name your restaurant right after.
+                    </p>
+                  </>
                 )}
-              </AnimatePresence>
-
-              <div>
-                <label className={labelCls} htmlFor="auth-email">Email</label>
-                <div className="mt-1.5 relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconMail size={17} /></span>
-                  <input
-                    id="auth-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="owner@yourrestaurant.com"
-                    required
-                    className={inputCls}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="auth-password">Password</label>
-                <div className="mt-1.5 relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-[15px]">🔑</span>
-                  <input
-                    id="auth-password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="At least 6 characters"
-                    required
-                    minLength={6}
-                    className={inputCls}
-                  />
-                </div>
-              </div>
-
-              {error && (
-                <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="text-sm text-red-400 overflow-hidden">
-                  {error}
-                </motion.p>
-              )}
-              {info && (
-                <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="text-sm text-[#f0d98c] overflow-hidden">
-                  {info}
-                </motion.p>
-              )}
-
-              <motion.button
-                disabled={busy}
-                whileTap={{ scale: 0.97 }}
-                className="btn-gold w-full rounded-full py-4 font-bold"
-              >
-                {busy
-                  ? (mode === "signup" ? "Building your console…" : "Unlocking…")
-                  : (mode === "signup" ? "Create my restaurant →" : "Sign in →")}
-              </motion.button>
-
-              <p className="text-xs text-neutral-500 text-center leading-relaxed">
-                {mode === "signup"
-                  ? "One account per restaurant — your customers only see your brand."
-                  : "New here? Switch to “Create account” — it sets up your whole console."}
-              </p>
-            </form>
-
-            {isFirebaseConfigured && (
-              <>
-                <div className="mt-5 flex items-center gap-3 text-[10px] tracking-[0.25em] uppercase text-neutral-600">
-                  <span className="h-px flex-1 bg-white/10" />
-                  or
-                  <span className="h-px flex-1 bg-white/10" />
-                </div>
-                <motion.button
-                  type="button"
-                  onClick={google}
-                  disabled={busy || googleBusy}
-                  whileTap={{ scale: 0.97 }}
-                  className="mt-4 w-full rounded-full bg-white text-black py-3.5 font-bold flex items-center justify-center gap-3 hover:bg-neutral-200 transition disabled:opacity-50 relative z-20 cursor-pointer disabled:cursor-not-allowed shadow-md"
-                >
-                  <GoogleG />
-                  {googleBusy ? "Opening Google…" : "Continue with Google"}
-                </motion.button>
-                <p className="mt-2.5 text-xs text-neutral-500 text-center">
-                  Gmail or Google Workspace — first time? You&apos;ll name your restaurant right after.
-                </p>
               </>
             )}
             </div>

@@ -50,16 +50,34 @@ export function dataDb(): Firestore {
   return fsDb;
 }
 
+const verifiedTokenCache = new Map<string, { uid: string; exp: number }>();
+
 export async function requireOwner(req: Request): Promise<string> {
   if (!projectId || !jwks) throw new Error("Owner auth is not configured.");
   const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!bearer) throw new Error("Sign in required.");
+
+  // Fast-path in-memory cache to eliminate repetitive remote JWKS round trips
+  const cached = verifiedTokenCache.get(bearer);
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (cached && cached.exp > nowSec) {
+    return cached.uid;
+  }
+
   const { payload } = await jwtVerify(bearer, jwks, {
     issuer: `https://securetoken.google.com/${projectId}`,
     audience: projectId,
   });
   const uid = (payload as { user_id?: string; sub?: string }).user_id ?? payload.sub;
   if (!uid) throw new Error("Invalid owner token.");
+
+  const tokenExp = typeof (payload as Record<string, unknown>).exp === "number" ? ((payload as Record<string, unknown>).exp as number) : nowSec + 300;
+  verifiedTokenCache.set(bearer, { uid, exp: Math.min(tokenExp, nowSec + 300) });
+  if (verifiedTokenCache.size > 1000) {
+    const firstKey = verifiedTokenCache.keys().next().value;
+    if (firstKey) verifiedTokenCache.delete(firstKey);
+  }
+
   return uid;
 }
 
@@ -79,8 +97,15 @@ class FirestoreStore implements Store {
   mode = "firestore" as const;
 
   async getBusiness(id: string): Promise<Business | null> {
+    if (!id) return null;
     const snap = await dataDb().collection("businesses").doc(id).get();
-    return snap.exists ? ({ id: snap.id, ...snap.data() } as Business) : null;
+    if (snap.exists) return { id: snap.id, ...snap.data() } as Business;
+    const lower = id.toLowerCase();
+    if (lower !== id) {
+      const snapLower = await dataDb().collection("businesses").doc(lower).get();
+      if (snapLower.exists) return { id: snapLower.id, ...snapLower.data() } as Business;
+    }
+    return null;
   }
   async listBusinesses(): Promise<Business[]> {
     const snap = await dataDb().collection("businesses").get();
@@ -147,8 +172,24 @@ class FirestoreStore implements Store {
   }
 
   async getCard(cardId: string): Promise<StampCard | null> {
-    const snap = await dataDb().collection("stampCards").doc(cardId).get();
-    return snap.exists ? ({ id: snap.id, ...snap.data() } as StampCard) : null;
+    if (!cardId) return null;
+    let snap = await dataDb().collection("stampCards").doc(cardId).get();
+    if (snap.exists) return { id: snap.id, ...snap.data() } as StampCard;
+    const decoded = decodeURIComponent(cardId);
+    if (decoded !== cardId) {
+      snap = await dataDb().collection("stampCards").doc(decoded).get();
+      if (snap.exists) return { id: snap.id, ...snap.data() } as StampCard;
+    }
+    const target = decoded || cardId;
+    const parts = target.split("__");
+    if (parts.length >= 2) {
+      const norm = `${parts[0].toLowerCase()}__${parts.slice(1).join("__")}`;
+      if (norm !== target) {
+        snap = await dataDb().collection("stampCards").doc(norm).get();
+        if (snap.exists) return { id: snap.id, ...snap.data() } as StampCard;
+      }
+    }
+    return null;
   }
   async getCardFor(businessId: string, customerId: string): Promise<StampCard | null> {
     const snap = await dataDb().collection("stampCards").where("businessId", "==", businessId).where("customerId", "==", customerId).limit(1).get();
@@ -266,7 +307,10 @@ class FirestoreStore implements Store {
     return token;
   }
   async getToken(businessId: string, code: string): Promise<StampToken | null> {
-    const snap = await dataDb().collection("stampTokens").doc(`${code.toUpperCase()}_${businessId}`).get();
+    let snap = await dataDb().collection("stampTokens").doc(`${code.toUpperCase()}_${businessId}`).get();
+    if (!snap.exists && businessId.toLowerCase() !== businessId) {
+      snap = await dataDb().collection("stampTokens").doc(`${code.toUpperCase()}_${businessId.toLowerCase()}`).get();
+    }
     return snap.exists ? (snap.data() as StampToken) : null;
   }
 

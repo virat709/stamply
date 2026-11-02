@@ -6,7 +6,7 @@ import { requireOwner } from "@/lib/server/store-firestore";
 export const dynamic = "force-dynamic";
 
 /** Read a stamp card. Allowed only for:
- *  - the customer's own device (possession cookie token matches), or
+ *  - the customer's own device (possession cookie token or header matches), or
  *  - an authenticated owner of the business (dashboard redeem flow).
  *  Card data is never world-readable. */
 export async function GET(req: Request, { params }: { params: Promise<{ cardId: string }> }) {
@@ -16,8 +16,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ cardId: 
     const card = await store.getCard(cardId);
     if (!card) return NextResponse.json({ error: "Stamp card not found." }, { status: 404 });
 
-    const claim = getClaims(req)[card.businessId];
-    let allowed = claim?.cardId === cardId && claim?.token === card.ownerToken;
+    const claims = getClaims(req);
+    const claim = claims[card.businessId] || claims[card.businessId.toLowerCase()];
+    const clientToken = req.headers.get("x-card-token");
+    let allowed =
+      (claim?.cardId === cardId && claim?.token === card.ownerToken) ||
+      (claim?.cardId.toLowerCase() === cardId.toLowerCase() && claim?.token === card.ownerToken) ||
+      (clientToken && clientToken === card.ownerToken);
+
     if (!allowed) {
       try {
         const uid = await requireOwner(req);
@@ -31,7 +37,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ cardId: 
       return NextResponse.json({ error: "This card is private. It opens automatically on the device where you joined." }, { status: 401 });
     }
 
-    const business = await store.getBusiness(card.businessId);
+    const business = await store.getBusiness(card.businessId) ?? await store.getBusiness(card.businessId.toLowerCase());
     if (!business) return NextResponse.json({ error: "Business not found." }, { status: 404 });
     // Trim the business document to public fields only.
     return NextResponse.json({

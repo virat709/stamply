@@ -51,6 +51,13 @@ export async function GET(req: Request) {
   const businessId = url.searchParams.get("businessId") ?? undefined;
 
   try {
+    if (kind === "token-status") {
+      const code = url.searchParams.get("code") ?? "";
+      if (!businessId || !code) return NextResponse.json({ token: null });
+      const token = await getStore().getToken(businessId, code);
+      return NextResponse.json({ token });
+    }
+
     if (kind === "businesses") {
       const g = await guard(req);
       if (g instanceof NextResponse) return g;

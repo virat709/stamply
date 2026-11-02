@@ -123,7 +123,16 @@ export const createCustomer = async (): Promise<Customer> => {
 export const touchCustomer = async (): Promise<void> => {};
 
 export async function getCard(cardId: string): Promise<StampCard> {
-  const { card } = await api<{ card: StampCard }>(`/api/card/${encodeURIComponent(cardId)}`);
+  const headers: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const storedToken = window.localStorage.getItem(`cardToken_${cardId}`);
+      if (storedToken) headers["x-card-token"] = storedToken;
+    } catch {
+      /* ignore */
+    }
+  }
+  const { card } = await api<{ card: StampCard }>(`/api/card/${encodeURIComponent(cardId)}`, { headers });
   return { ...card, customerId: (card as StampCard & { customerId?: string }).customerId ?? "", businessId: card.businessId };
 }
 export async function getCardFor(_businessId: string, _customerId: string): Promise<StampCard | null> {
