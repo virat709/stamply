@@ -153,6 +153,16 @@ function CardInner() {
                 code and enter your phone number to verify with staff.
               </p>
               <p className="mt-1 text-xs text-neutral-600">Stamps visible here would let anyone claim your reward — that&apos;s why it&apos;s locked.</p>
+              {params.cardId?.includes("__") && (
+                <div className="mt-5">
+                  <Link
+                    href={`/b/${params.cardId.split("__")[0]}`}
+                    className="btn-gold inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-bold active:scale-[0.98] transition-transform touch-manipulation cursor-pointer select-none"
+                  >
+                    📱 Enter phone number to open
+                  </Link>
+                </div>
+              )}
             </>
           )}
         </main>
@@ -394,16 +404,14 @@ function CardInner() {
               <p className="mt-2 text-sm text-[#f0d98c] font-semibold">🎉 Bonus stamp added for your review!</p>
             )}
             {reviewResult.googleUrl && (
-              <motion.a
+              <a
                 href={reviewResult.googleUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="mt-4 inline-flex items-center gap-2 rounded-full bg-white text-black px-5 py-2.5 text-sm font-semibold hover:bg-neutral-200 transition"
+                className="mt-4 inline-flex items-center gap-2 rounded-full bg-white text-black px-5 py-2.5 text-sm font-semibold hover:bg-neutral-200 active:scale-[0.98] transition-all touch-manipulation cursor-pointer"
               >
                 Post your review on Google Maps →
-              </motion.a>
+              </a>
             )}
             <div className="mt-4">
               <button onClick={() => setReviewResult(null)} className="text-xs text-neutral-500 hover:text-neutral-300">
@@ -511,7 +519,7 @@ function ReviewModal({
             placeholder="Tell us more (optional)"
             rows={3}
             maxLength={500}
-            className="input-lux w-full rounded-xl px-4 py-3 text-sm"
+            className="input-lux w-full rounded-xl px-4 py-3 text-base touch-manipulation cursor-text"
           />
         </div>
         {error && <p className="mt-2 text-sm text-red-400">{error}</p>}

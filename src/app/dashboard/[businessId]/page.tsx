@@ -25,7 +25,7 @@ import { StampIcon } from "@/components/StampGrid";
 // ─── layout constants ─────────────────────────────────────────────────────────
 type Tab = "home" | "redeem" | "overview" | "settings";
 
-const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base focus:outline-none focus:border-[#d4af37]/60 focus:ring-1 focus:ring-[#d4af37]/40 input-lux";
+const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base focus:outline-none focus:border-[#d4af37]/60 focus:ring-1 focus:ring-[#d4af37]/40 input-lux touch-manipulation cursor-text";
 const cardCls = "lux-card rounded-2xl p-5";
 
 // Bottom-nav items
@@ -67,14 +67,14 @@ export function QrDownloadButtons({ svg, filenameBase, onDone }: {
   }
   return (
     <div className="flex gap-2 justify-center mt-3">
-      <motion.button type="button" whileTap={{ scale: 0.95 }} onClick={png}
-        className="btn-ghost rounded-full px-4 py-2 text-xs font-semibold">
+      <button type="button" onClick={png}
+        className="btn-ghost rounded-full px-4 py-2 text-xs font-semibold active:scale-[0.96] transition-transform touch-manipulation cursor-pointer select-none">
         ⬇ PNG
-      </motion.button>
-      <motion.button type="button" whileTap={{ scale: 0.95 }} onClick={svgdl}
-        className="btn-ghost rounded-full px-4 py-2 text-xs font-semibold">
+      </button>
+      <button type="button" onClick={svgdl}
+        className="btn-ghost rounded-full px-4 py-2 text-xs font-semibold active:scale-[0.96] transition-transform touch-manipulation cursor-pointer select-none">
         ⬇ SVG
-      </motion.button>
+      </button>
     </div>
   );
 }
@@ -854,11 +854,11 @@ function RedeemPanel({ businessId }: { businessId: string }) {
             <p className="mt-2 text-sm text-neutral-200">
               Give them <strong className="text-[#f0d98c]">{reward}</strong> then confirm.
             </p>
-            <motion.button onClick={confirmRedeem} disabled={checking} whileTap={{ scale: 0.97 }}
+            <button onClick={confirmRedeem} disabled={checking}
               className="mt-4 w-full rounded-full bg-emerald-500 text-black px-5 py-3.5 font-bold
-                         hover:bg-emerald-400 transition disabled:opacity-50 text-sm">
+                         hover:bg-emerald-400 active:scale-[0.98] transition-all disabled:opacity-50 text-sm touch-manipulation cursor-pointer select-none">
               {checking ? "Confirming…" : `✓ Confirm — ${reward} given`}
-            </motion.button>
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

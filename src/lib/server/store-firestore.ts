@@ -151,8 +151,26 @@ class FirestoreStore implements Store {
   }
 
   async findCustomerByPhone(phone: string): Promise<Customer | null> {
-    const snap = await dataDb().collection("customers").where("phoneNumber", "==", normalizePhone(phone)).limit(1).get();
-    return snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as Customer);
+    const raw = normalizePhone(phone);
+    if (!raw) return null;
+    const snap = await dataDb().collection("customers").where("phoneNumber", "==", raw).limit(1).get();
+    if (!snap.empty) {
+      return { id: snap.docs[0].id, ...snap.docs[0].data() } as Customer;
+    }
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length >= 7) {
+      const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
+      const candidates = [last10, `+91${last10}`, `91${last10}`, `0${last10}`, `+${digits}`];
+      for (const cand of candidates) {
+        if (cand !== raw) {
+          const s = await dataDb().collection("customers").where("phoneNumber", "==", cand).limit(1).get();
+          if (!s.empty) {
+            return { id: s.docs[0].id, ...s.docs[0].data() } as Customer;
+          }
+        }
+      }
+    }
+    return null;
   }
   async findCustomerByEmail(email: string): Promise<Customer | null> {
     const snap = await dataDb().collection("customers").where("email", "==", email.toLowerCase()).limit(1).get();

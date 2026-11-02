@@ -89,16 +89,22 @@ function JoinInner() {
       });
       if (!res.cardId) throw new Error(res.error ?? "Could not create your card.");
       try {
-        localStorage.setItem(
-          `currentCustomer_${params.businessId}`,
-          JSON.stringify({
-            customerId: res.customerId,
-            cardId: res.cardId,
-            name: values.name,
-            phone: values.phoneNumber || "",
-            cardToken: (res as { cardToken?: string }).cardToken || "",
-          })
-        );
+        const payload = JSON.stringify({
+          customerId: res.customerId,
+          cardId: res.cardId,
+          name: values.name,
+          phone: values.phoneNumber || "",
+          cardToken: (res as { cardToken?: string }).cardToken || "",
+        });
+        const bKey = params.businessId ? decodeURIComponent(params.businessId) : "";
+        if (bKey) {
+          localStorage.setItem(`currentCustomer_${bKey}`, payload);
+          localStorage.setItem(`currentCustomer_${bKey.toLowerCase()}`, payload);
+        }
+        if (business?.id && business.id !== bKey) {
+          localStorage.setItem(`currentCustomer_${business.id}`, payload);
+          localStorage.setItem(`currentCustomer_${business.id.toLowerCase()}`, payload);
+        }
         if ((res as { cardToken?: string }).cardToken) {
           localStorage.setItem(`cardToken_${res.cardId}`, (res as { cardToken?: string }).cardToken!);
         }
@@ -182,14 +188,19 @@ function JoinInner() {
 
           <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
             <div>
-              <label className="label-lux" htmlFor="join-name">Your name</label>
+              <label className="label-lux cursor-pointer" htmlFor="join-name">Your name</label>
               <div className={`mt-1.5 relative ${errors.name ? "animate-[shake_0.4s]" : ""}`}>
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconUser size={17} /></span>
-                <input id="join-name" {...register("name")} placeholder="Jane Doe" className="input-lux w-full rounded-xl pl-11 pr-4 py-3.5" />
+                <input
+                  id="join-name"
+                  {...register("name")}
+                  placeholder="Jane Doe"
+                  className="input-lux w-full rounded-xl pl-11 pr-4 py-3.5 text-base touch-manipulation relative z-20 cursor-text"
+                />
               </div>
             </div>
             <div>
-              <label className="label-lux" htmlFor="join-phone">WhatsApp / Phone number (10 digits)</label>
+              <label className="label-lux cursor-pointer" htmlFor="join-phone">WhatsApp / Phone number (10 digits)</label>
               <div className="mt-1.5 relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconWhatsapp size={17} /></span>
                 <input
@@ -197,8 +208,10 @@ function JoinInner() {
                   {...register("phoneNumber")}
                   placeholder="e.g. 9876543210"
                   type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
                   maxLength={15}
-                  className="input-lux w-full rounded-xl pl-11 pr-4 py-3.5"
+                  className="input-lux w-full rounded-xl pl-11 pr-4 py-3.5 text-base touch-manipulation relative z-20 cursor-text"
                 />
               </div>
             </div>
@@ -219,10 +232,10 @@ function JoinInner() {
               )}
             </AnimatePresence>
 
-            <motion.button
+            <button
+              type="submit"
               disabled={busy}
-              whileTap={{ scale: 0.97 }}
-              className="btn-gold w-full rounded-full py-4 font-bold text-[15px] flex items-center justify-center gap-2"
+              className="btn-gold w-full rounded-full py-4 font-bold text-[15px] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation select-none relative z-30"
             >
               {busy ? (
                 <>
@@ -233,7 +246,7 @@ function JoinInner() {
                   <IconSparkle size={16} /> Get my stamp card
                 </>
               )}
-            </motion.button>
+            </button>
             <p className="text-xs text-neutral-500 text-center leading-relaxed">
               Enter your 10-digit number to instantly receive your stamp and access your rewards card.
             </p>
