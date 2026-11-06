@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type {
   Business,
   BusinessStats,
@@ -20,10 +21,18 @@ import type {
 //    app runs fully through THIS code even without a service account.
 // ---------------------------------------------------------------------------
 
-export const STAMP_COOLDOWN_MS = 5_000;
-export const COOLDOWN_MSG = "Stamp already added recently. Please wait a few seconds before adding another.";
+export const STAMP_COOLDOWN_MS = 60_000;
+export const COOLDOWN_MSG = "Stamp already added recently. Please wait a minute before adding another.";
 export const CARD_FULL_MSG = "Reward already unlocked — redeem it first!";
 export const VERIFICATION_TTL_MS = 5 * 60_000;
+export const TOKEN_TTL_MS = 5 * 60_000;
+
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/** Six-character counter code from a CSPRNG (32^6 ≈ 1.07 billion). */
+export function newStampCode(): string {
+  return Array.from(randomBytes(6), (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
+}
 
 export function cardIdFor(businessId: string, customerId: string): string {
   return `${businessId}__${customerId}`;

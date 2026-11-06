@@ -11,19 +11,20 @@ import {
   sendPasswordResetEmail,
   setPersistence,
   browserLocalPersistence,
+  browserSessionPersistence,
   type User,
 } from "firebase/auth";
 import { auth, isFirebaseConfigured } from "@/lib/firebase";
-import { createBusiness, getBusiness, getOwnerBusinesses, saveBusiness, seedDemo } from "@/lib/db";
+import { createBusiness, getOwnerBusinesses } from "@/lib/db";
 import type { Business } from "@/lib/types";
 
 // One auth layer for both worlds:
 //  - Firebase configured  -> real accounts via Firebase Auth
 //  - demo (no keys)       -> accounts in localStorage (fine for demos, NOT production)
 
-const SESSION_KEY = "stamply_session";
+const SESSION_KEY = "loyalkard_session";
 
-const DEMO_KEY = "stamply_demo_users_v1";
+const DEMO_KEY = "loyalkard_demo_users_v1";
 
 interface DemoUser {
   id: string;
@@ -61,7 +62,6 @@ let listenerStarted = false;
 function startAuthListener(): void {
   if (listenerStarted || !auth) return;
   listenerStarted = true;
-  setPersistence(auth, browserLocalPersistence).catch(() => {});
   onAuthStateChanged(auth, (user) => {
     cachedOwner = user ? { uid: user.uid } : null;
     if (user) setSession(user.uid);
@@ -153,7 +153,16 @@ export interface AuthResult {
   redirecting?: boolean;
 }
 
-export async function signUpOwner(restaurantName: string, email: string, password: string): Promise<AuthResult> {
+async function applyPersistence(remember: boolean): Promise<void> {
+  if (!auth) return;
+  try {
+    await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
+  } catch {
+    /* fall back to Firebase's default persistence */
+  }
+}
+
+export async function signUpOwner(restaurantName: string, email: string, password: string, remember = true): Promise<AuthResult> {
   email = email.trim().toLowerCase();
   const name = restaurantName.trim();
   if (!name) return { ok: false, error: "Enter your restaurant's name." };
@@ -161,6 +170,7 @@ export async function signUpOwner(restaurantName: string, email: string, passwor
   try {
     let uid: string;
     if (isFirebaseConfigured && auth) {
+      await applyPersistence(remember);
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       uid = cred.user.uid;
       cachedOwner = { uid };
@@ -192,10 +202,11 @@ export function isMobileBrowser(): boolean {
 /** Google / Gmail one-tap sign-in for owners. Uses direct redirect on mobile
  *  browsers for guaranteed reliability, and popup with auto-redirect fallback
  *  on desktop. */
-export async function signInOwnerWithGoogle(): Promise<AuthResult> {
+export async function signInOwnerWithGoogle(remember = true): Promise<AuthResult> {
   if (!isFirebaseConfigured || !auth) {
     return { ok: false, error: "Google sign-in needs the connected Firebase project." };
   }
+  await applyPersistence(remember);
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
 
@@ -247,10 +258,11 @@ export async function handleGoogleRedirectResult(): Promise<AuthResult | null> {
   }
 }
 
-export async function signInOwner(email: string, password: string): Promise<AuthResult> {
+export async function signInOwner(email: string, password: string, remember = true): Promise<AuthResult> {
   email = email.trim().toLowerCase();
   try {
     if (isFirebaseConfigured && auth) {
+      await applyPersistence(remember);
       const cred = await signInWithEmailAndPassword(auth, email, password);
       cachedOwner = { uid: cred.user.uid };
       setSession(cred.user.uid);
@@ -296,30 +308,4 @@ export async function firstDashboardPath(uid: string): Promise<string> {
 /** Used by /onboarding: create a business for an owner who somehow has none. */
 export async function createRestaurantForOwner(uid: string, name: string): Promise<Business> {
   return createBusiness(uid, name);
-}
-
-/** Hardens the demo entry links (/dashboard/demo-cafe, /b/demo-cafe):
- *  in the old local-DB mode the demo business always existed; in Firebase
- *  mode it must be seeded into Firestore once so the links resolve. */
-let demoSeeded = false;
-export async function ensureDemoBusiness(): Promise<void> {
-  if (demoSeeded) return;
-  if (isFirebaseConfigured) {
-    // Server mode: the demo doc is seeded by the server (rules deny all
-    // client writes).
-    await seedDemo();
-    demoSeeded = true;
-    return;
-  }
-  if (await getBusiness("demo-cafe")) {
-    demoSeeded = true;
-    return;
-  }
-  await saveBusiness({
-    id: "demo-cafe",
-    name: "Demo Café",
-    loyaltyRule: { requiredStamps: 10, rewardDescription: "Free coffee of your choice", expiresAt: null, minSpend: null },
-    createdAt: new Date().toISOString(),
-  });
-  demoSeeded = true;
 }

@@ -50,6 +50,7 @@ function CardInner() {
           }
           setNotFound(true);
         } else if (status === 401) {
+          setCard(null);
           setUnclaimed(true);
         }
       }
@@ -344,7 +345,7 @@ function CardInner() {
                     onClick={async () => {
                       if (!rewardQrEl) return;
                       try {
-                        await downloadQrPng(rewardQrEl, `stamply-reward-qr-${business.name.replace(/\W+/g, "-").toLowerCase()}`);
+                        await downloadQrPng(rewardQrEl, `loyalkard-reward-qr-${business.name.replace(/\W+/g, "-").toLowerCase()}`);
                       } catch {
                         /* silent */
                       }

@@ -20,7 +20,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Stamply — Luxury Digital Stamp Cards",
+  title: "Loyalkard — Luxury Digital Stamp Cards",
   description: "The new alchemy of loyalty. Digital stamp cards for cafés, restaurants and retail — no paper, no downloads, no fraud.",
 };
 

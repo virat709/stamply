@@ -6,9 +6,10 @@ import { normalizePhone, type CollectOutcome } from "./store";
 /** The single entry point for the customer join/collect flow:
  *  - new customer  -> register + card, stamp immediately when a live counter
  *                     code was scanned
- *  - returning     -> live code stamps (single-use); otherwise card view
+ *  - returning     -> create a staff verification request; no card access or
+ *                     stamp is granted until staff approves the person.
  *  Never reveals an existing card by phone number alone — browser access is
- *  granted via a possession cookie (or fallback client claim token). */
+ *  granted only after the join flow (new member) or staff approval. */
 export async function collect(input: {
   businessId: string;
   name: string;
@@ -36,43 +37,39 @@ export async function collect(input: {
       if (typeof stamped === "string") error = stamped;
       else status = "stamped";
     }
-    const res = NextResponse.json<CollectOutcome & { cardToken?: string }>({
+    const res = NextResponse.json<CollectOutcome>({
       status,
       cardId: card.id,
       customerId: customer.id,
-      cardToken: card.ownerToken,
       error,
     });
-    setClaim(input.req, res, bId, { cardId: card.id, customerId: customer.id, token: card.ownerToken! });
-    if (input.businessId.toLowerCase() !== bId.toLowerCase()) {
-      setClaim(input.req, res, input.businessId, { cardId: card.id, customerId: customer.id, token: card.ownerToken! });
-    }
+    grantClaim(input.req, res, card, bId);
     return res;
   }
 
   // ---- returning member ----
+  // The phone number only identifies the customer. Access to an existing card
+  // (and any stamp) requires staff approval in the owner console.
   const card = await store.getOrCreateCard(bId, customer.id);
-  let stamped = false;
-  if (input.code) {
-    const result = await store.stampWithToken(bId, input.code, customer.id);
-    if (typeof result === "string") {
-      error = result; // invalid/expired/used/cooldown — the stamp did not land
-    } else {
-      stamped = true;
-    }
-  }
-
-  // Verification is done via 10-digit phone number — grant possession cookie directly
-  const res = NextResponse.json<CollectOutcome & { cardToken?: string }>({
-    status: stamped ? "stamped" : "registered",
+  const verification = await store.createVerification(bId, customer.id, input.name, phone);
+  return NextResponse.json<CollectOutcome>({
+    status: "pending_verification",
     cardId: card.id,
     customerId: customer.id,
-    cardToken: card.ownerToken,
-    error,
+    verificationId: verification.id,
   });
-  setClaim(input.req, res, bId, { cardId: card.id, customerId: customer.id, token: card.ownerToken! });
-  if (input.businessId.toLowerCase() !== bId.toLowerCase()) {
-    setClaim(input.req, res, input.businessId, { cardId: card.id, customerId: customer.id, token: card.ownerToken! });
-  }
-  return res;
+}
+
+function grantClaim(
+  req: Request,
+  res: NextResponse,
+  card: { id: string; customerId: string; ownerToken?: string },
+  bId: string
+) {
+  if (!card.ownerToken) return;
+  setClaim(req, res, bId, {
+    cardId: card.id,
+    customerId: card.customerId,
+    token: card.ownerToken,
+  });
 }

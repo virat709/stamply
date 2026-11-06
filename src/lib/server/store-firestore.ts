@@ -5,7 +5,8 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { Business, BusinessStats, Customer, Review, StampCard, StampToken, VerificationRequest } from "@/lib/types";
 import { autoFeedback } from "@/lib/review-feedback";
 import {
-  cardIdFor, normalizePhone, stampGuard, VERIFICATION_TTL_MS, type Store,
+  cardIdFor, newStampCode, normalizePhone, stampGuard, TOKEN_TTL_MS,
+  VERIFICATION_TTL_MS, type Store,
 } from "./store";
 
 // Production store: Firebase Admin SDK. Requires a service account in env:
@@ -26,8 +27,8 @@ let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 function ensureApps(): void {
   const dataApp =
     clientEmail && privateKey && projectId
-      ? getApps().find((a: App) => a.name === "stamply-data") ??
-        initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) }, "stamply-data")
+      ? getApps().find((a: App) => a.name === "loyalkard-data") ??
+        initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) }, "loyalkard-data")
       : null;
   fsDb = dataApp ? getFirestore(dataApp) : null;
 
@@ -147,7 +148,15 @@ class FirestoreStore implements Store {
     const existing = await this.getBusiness(b.id);
     if (!existing) throw new Error("Business not found.");
     if (existing.ownerId && existing.ownerId !== ownerId) throw new Error("Not your business console.");
-    await dataDb().collection("businesses").doc(b.id).set(b, { merge: true });
+    // Never mass-assign the client payload: ownerId/createdAt must not be
+    // mutable through the dashboard API.
+    const data: Record<string, unknown> = {
+      name: b.name ?? existing.name,
+      loyaltyRule: b.loyaltyRule ?? existing.loyaltyRule,
+    };
+    if (b.profile !== undefined) data.profile = b.profile;
+    if (b.logoUrl !== undefined) data.logoUrl = b.logoUrl;
+    await dataDb().collection("businesses").doc(b.id).set(data, { merge: true });
   }
 
   async findCustomerByPhone(phone: string): Promise<Customer | null> {
@@ -159,9 +168,9 @@ class FirestoreStore implements Store {
     }
     const digits = phone.replace(/\D/g, "");
     if (digits.length >= 7) {
-      const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
-      const candidates = [last10, `+91${last10}`, `91${last10}`, `0${last10}`, `+${digits}`];
-      for (const cand of candidates) {
+      // Exact digits only (handles a stored number missing the leading +).
+      // Never suffix-match: similar numbers can belong to different people.
+      for (const cand of [digits, `+${digits}`]) {
         if (cand !== raw) {
           const s = await dataDb().collection("customers").where("phoneNumber", "==", cand).limit(1).get();
           if (!s.empty) {
@@ -254,6 +263,8 @@ class FirestoreStore implements Store {
           tx.set(cardRef, { businessId, customerId, currentStamps: 1, totalRedemptions: 0, updatedAt: now, lastStampAt: now, ownerToken: next.ownerToken });
         }
         tx.update(tokenRef, { used: true, usedByCustomerId: customerId });
+        // Audit log so the visit shows up in "all-time" history.
+        tx.set(d.collection("visits").doc(), { customerId, businessId, timestamp: now, type: "stamp_added" });
         return next;
       });
     } catch (e) {
@@ -273,6 +284,7 @@ class FirestoreStore implements Store {
         if (!snap.exists) {
           const data = { businessId, customerId, currentStamps: 1, totalRedemptions: 0, updatedAt: now, lastStampAt: now, ownerToken: newOwnerToken() };
           tx.set(cardRef, data);
+          tx.set(d.collection("visits").doc(), { customerId, businessId, timestamp: now, type: "stamp_added" });
           return { id: cardRef.id, ...data } as StampCard;
         }
         const existing = snap.data() as StampCard;
@@ -282,6 +294,7 @@ class FirestoreStore implements Store {
           return (e as Error).message;
         }
         tx.update(cardRef, { currentStamps: existing.currentStamps + 1, updatedAt: now, lastStampAt: now });
+        tx.set(d.collection("visits").doc(), { customerId, businessId, timestamp: now, type: "stamp_added" });
         return { ...existing, id: cardRef.id, currentStamps: existing.currentStamps + 1, updatedAt: now, lastStampAt: now };
       });
     } catch (e) {
@@ -315,13 +328,30 @@ class FirestoreStore implements Store {
 
   async createToken(businessId: string): Promise<StampToken> {
     const d = dataDb();
+    // Rotate: invalidate every unused code for this business before issuing a
+    // new one, so a screenshot of an old QR cannot be reused.
+    const existing = await d.collection("stampTokens").where("businessId", "==", businessId).get();
+    const batch = d.batch();
+    let writes = 0;
+    for (const doc of existing.docs) {
+      if (!(doc.data() as StampToken).used) {
+        batch.update(doc.ref, { used: true });
+        writes++;
+      }
+    }
+    if (writes > 0) await batch.commit();
+
+    let code = newStampCode();
+    while ((await d.collection("stampTokens").doc(`${code}_${businessId}`).get()).exists) {
+      code = newStampCode();
+    }
     const token: StampToken = {
-      code: Math.random().toString(36).slice(2, 8).toUpperCase(),
+      code,
       businessId,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+      expiresAt: new Date(Date.now() + TOKEN_TTL_MS).toISOString(),
       used: false,
     };
-    await d.collection("stampTokens").doc(`${token.code}_${businessId}`).set(token);
+    await d.collection("stampTokens").doc(`${code}_${businessId}`).set(token);
     return token;
   }
   async getToken(businessId: string, code: string): Promise<StampToken | null> {

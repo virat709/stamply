@@ -4,9 +4,8 @@ import { auth, isFirebaseConfigured, db as fsClient } from "@/lib/firebase";
 import { getDoc, doc } from "firebase/firestore";
 import type {
   Business, BusinessStats, Customer, Review, StampCard, StampToken,
-  VerificationRequest, SubmitReviewResult, Reservation, ReservationStatus,
+  VerificationRequest, SubmitReviewResult,
 } from "@/lib/types";
-
 // Client shim for the server-side DB. When Firebase is configured the app
 // talks ONLY to /api/* routes (trusting the server, not the browser); with no
 // Firebase keys the app stays on the localStorage demo (db/local.ts).
@@ -47,21 +46,6 @@ const post = <T>(path: string, body: unknown, headers?: Record<string, string>) 
 
 // ---------------- businesses ----------------
 
-const BUSINESS_URL_FIELDS = (b: Business) => ({
-  id: b.id,
-  ...(b.ownerId ? { ownerId: b.ownerId } : {}),
-  ...(b.logoUrl ? { logoUrl: b.logoUrl } : {}),
-  name: b.name,
-  loyaltyRule: {
-    requiredStamps: b.loyaltyRule.requiredStamps,
-    rewardDescription: b.loyaltyRule.rewardDescription,
-    expiresAt: b.loyaltyRule.expiresAt,
-    minSpend: b.loyaltyRule.minSpend,
-  },
-  ...(b.profile ? { profile: b.profile } : {}),
-  createdAt: b.createdAt,
-});
-
 export async function getBusiness(id: string): Promise<Business | null> {
   if (!id) return null;
   try {
@@ -100,11 +84,15 @@ export async function createBusiness(_ownerId: string, name: string): Promise<Bu
 }
 
 export async function saveBusiness(b: Business): Promise<void> {
-  await post("/api/owner", { action: "save-business", business: BUSINESS_URL_FIELDS(b) });
-}
-
-export async function seedDemo(): Promise<void> {
-  await post("/api/owner", { action: "seed-demo" });
+  // Send only mutable fields; ownership/creation metadata is server-owned.
+  const business: Record<string, unknown> = {
+    id: b.id,
+    name: b.name,
+    loyaltyRule: b.loyaltyRule,
+  };
+  if (b.logoUrl !== undefined) business.logoUrl = b.logoUrl;
+  if (b.profile !== undefined) business.profile = b.profile;
+  await post("/api/owner", { action: "save-business", business });
 }
 
 // ---------------- customers + cards ----------------
@@ -123,16 +111,7 @@ export const createCustomer = async (): Promise<Customer> => {
 export const touchCustomer = async (): Promise<void> => {};
 
 export async function getCard(cardId: string): Promise<StampCard> {
-  const headers: Record<string, string> = {};
-  if (typeof window !== "undefined") {
-    try {
-      const storedToken = window.localStorage.getItem(`cardToken_${cardId}`);
-      if (storedToken) headers["x-card-token"] = storedToken;
-    } catch {
-      /* ignore */
-    }
-  }
-  const { card } = await api<{ card: StampCard }>(`/api/card/${encodeURIComponent(cardId)}`, { headers });
+  const { card } = await api<{ card: StampCard }>(`/api/card/${encodeURIComponent(cardId)}`);
   return { ...card, customerId: (card as StampCard & { customerId?: string }).customerId ?? "", businessId: card.businessId };
 }
 export async function getCardFor(_businessId: string, _customerId: string): Promise<StampCard | null> {
@@ -262,19 +241,10 @@ export async function claimAfterVerification(verificationId: string): Promise<{ 
   return post("/api/card/claim", { verificationId });
 }
 
-// ---------------- reservations (feature mostly disabled; kept for parity) ----------------
-
-export const createReservation = async (): Promise<Reservation> => {
-  throw new Error("Reservations are offline-reserved in server mode.");
+// shortcut: reservations disabled in server mode; local.ts has full impl if re-enabled
+export const createReservation = async (): Promise<never> => { throw new Error("Reservations disabled."); };
+export const listReservations = async (_b: string) => {
+  void _b;
+  return [] as never[];
 };
-
-export const listReservations = async (_businessId: string): Promise<Reservation[]> => {
-  void _businessId;
-  return [];
-};
-
-export const setReservationStatus = async (_businessId: string, _id: string, _status: ReservationStatus): Promise<void> => {
-  void _businessId;
-  void _id;
-  void _status;
-};
+export const setReservationStatus = async () => {};

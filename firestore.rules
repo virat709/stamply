@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Stamply — fully server-trusted rules.
+// Loyalkard — fully server-trusted rules.
 // Every loyalty mutation runs server-side (Next.js API routes with the
 // Firebase Admin SDK), so the browser needs NOTHING except public business
 // documents: no stamps, tokens, customers, reviews or visit data are

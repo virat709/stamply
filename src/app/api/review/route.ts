@@ -23,7 +23,8 @@ export async function POST(req: Request) {
     const card = await store.getCard(String(body.cardId ?? ""));
     if (!card) return NextResponse.json({ error: "Stamp card not found." }, { status: 404 });
 
-    const claim = getClaims(req)[card.businessId];
+    const claims = getClaims(req);
+    const claim = claims[card.businessId] || claims[card.businessId.toLowerCase()];
     if (!claim || claim.cardId !== card.id || claim.token !== card.ownerToken) {
       return NextResponse.json({ error: "Card verification failed." }, { status: 401 });
     }

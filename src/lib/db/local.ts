@@ -4,7 +4,9 @@ import { autoFeedback } from "@/lib/review-feedback";
 // LocalStorage-backed data store so the app runs end-to-end without Firebase.
 // Mirrors the Firestore implementation in ./firebase. Same function signatures.
 
-const KEY = "stampcard_demo_db_v1";
+const KEY = "loyalkard_demo_db_v1";
+const LEGACY_KEY = "stampcard_demo_db_v1";
+const TOKEN_TTL_MS = 5 * 60_000;
 
 interface LocalDB {
   businesses: Business[];
@@ -60,7 +62,16 @@ function seed(): LocalDB {
 function read(): LocalDB {
   if (typeof window === "undefined") return seed();
   try {
-    const raw = window.localStorage.getItem(KEY);
+    let raw = window.localStorage.getItem(KEY);
+    if (!raw) {
+      // Migrate the pre-rebrand demo key once, so existing local data survives.
+      const legacy = window.localStorage.getItem(LEGACY_KEY);
+      if (legacy) {
+        raw = legacy;
+        window.localStorage.setItem(KEY, legacy);
+        window.localStorage.removeItem(LEGACY_KEY);
+      }
+    }
     if (!raw) {
       const s = seed();
       window.localStorage.setItem(KEY, JSON.stringify(s));
@@ -85,20 +96,63 @@ function write(db: LocalDB) {
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function newCode(): string {
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    const bytes = crypto.getRandomValues(new Uint8Array(6));
+    return Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
+  }
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function findLocalCustomerByPhone(phone: string): Customer | null {
+  const digits = normalizePhone(phone).replace(/\D/g, "");
+  if (digits.length < 7) return null;
+  return read().customers.find((c) => {
+    const stored = (c.phoneNumber ?? "").replace(/\D/g, "");
+    return stored.length >= 7 && stored === digits;
+  }) ?? null;
+}
+
+function findLocalCustomerByEmail(email: string): Customer | null {
+  return read().customers.find((c) => (c.email ?? "").toLowerCase() === email.trim().toLowerCase()) ?? null;
+}
+
 export async function listBusinesses(): Promise<Business[]> {
   return read().businesses;
 }
 
 export async function getBusiness(id: string): Promise<Business | null> {
-  return read().businesses.find((b) => b.id === id) ?? null;
+  const lower = (id ?? "").toLowerCase();
+  return read().businesses.find((b) => b.id === id || b.id.toLowerCase() === lower) ?? null;
 }
 
 export async function saveBusiness(b: Business): Promise<void> {
   const db = read();
   const i = db.businesses.findIndex((x) => x.id === b.id);
-  if (i >= 0) db.businesses[i] = b;
-  else db.businesses.push(b);
+  if (i >= 0) {
+    const existing = db.businesses[i];
+    // Keep ownership/creation metadata out of client-controlled saves.
+    db.businesses[i] = {
+      ...existing,
+      name: b.name ?? existing.name,
+      loyaltyRule: b.loyaltyRule ?? existing.loyaltyRule,
+      profile: b.profile ?? existing.profile,
+      logoUrl: b.logoUrl !== undefined ? b.logoUrl : existing.logoUrl,
+    };
+  } else {
+    db.businesses.push(b);
+  }
   write(db);
+}
+
+export async function seedDemo(): Promise<void> {
+  const db = read();
+  if (!db.businesses.some((b) => b.id === "demo-cafe")) {
+    db.businesses.push(seed().businesses[0]);
+    write(db);
+  }
 }
 
 const slug = (s: string) =>
@@ -227,14 +281,111 @@ export async function redeemReward(businessId: string, customerId: string): Prom
   return { card: { ...card } };
 }
 
+export async function addStampByContact(
+  businessId: string,
+  contact: { phone?: string; email?: string }
+): Promise<{ message: string }> {
+  const customer = contact.email
+    ? findLocalCustomerByEmail(contact.email)
+    : findLocalCustomerByPhone(contact.phone ?? "");
+  if (!customer) return { message: "Customer not found." };
+  const res = await addStamp(businessId, customer.id);
+  return { message: res.error ?? `Stamp added — now ${res.card.currentStamps}.` };
+}
+
+/** Local-demo mirror of the server collect flow. A returning customer gets a
+ *  staff-verification request instead of immediate card access. */
+export async function submitCollect(input: {
+  businessId: string;
+  name?: string;
+  phoneNumber?: string;
+  code: string | null;
+}): Promise<{
+  status: "registered" | "stamped" | "pending_verification";
+  cardId?: string;
+  customerId?: string;
+  verificationId?: string;
+  error?: string;
+}> {
+  const business = await getBusiness(input.businessId);
+  if (!business) return { status: "registered", error: "This loyalty program doesn't exist." };
+  const phone = normalizePhone(input.phoneNumber);
+  const existing = findLocalCustomerByPhone(phone);
+
+  if (existing) {
+    const card = await getOrCreateCard(business.id, existing.id);
+    const verification = await createVerificationRequest(business.id, existing.id, input.name ?? "", phone);
+    return {
+      status: "pending_verification",
+      cardId: card.id,
+      customerId: existing.id,
+      verificationId: verification.id,
+    };
+  }
+
+  const customer = await createCustomer({ name: input.name, phoneNumber: phone });
+  const card = await getOrCreateCard(business.id, customer.id);
+  let status: "registered" | "stamped" = "registered";
+  let error: string | undefined;
+  if (input.code) {
+    const stamped = await redeemStampToken(business.id, input.code, customer.id);
+    if (stamped.ok) status = "stamped";
+    else error = stamped.error;
+  }
+  return { status, cardId: card.id, customerId: customer.id, error };
+}
+
+export async function lookupCard(businessId: string, input: string): Promise<StampCard> {
+  const business = await getBusiness(businessId);
+  if (!business) throw new Error("Business not found.");
+  const raw = input.trim();
+  if (!raw) throw new Error("Enter a card link, code, phone, or email.");
+  const db = read();
+
+  let cardId: string | null = null;
+  let customerId: string | null = null;
+  try {
+    const parsed = JSON.parse(raw) as { cardId?: string };
+    if (parsed && typeof parsed.cardId === "string") cardId = parsed.cardId;
+  } catch { /* not JSON */ }
+  if (!cardId) {
+    const match = raw.match(/\/card\/([A-Za-z0-9_-]+)/);
+    if (match) cardId = match[1];
+  }
+  const looksLikePhone = /^[+\s\-()0-9]{7,}$/.test(raw) && /[0-9]{7,}/.test(raw);
+  if (!cardId && raw.includes("@")) customerId = findLocalCustomerByEmail(raw)?.id ?? null;
+  if (!cardId && !customerId && looksLikePhone) customerId = findLocalCustomerByPhone(raw)?.id ?? null;
+  if (!cardId && !customerId && !looksLikePhone && /^[A-Za-z0-9_-]+$/.test(raw)) cardId = raw;
+  if (!cardId && !customerId) customerId = findLocalCustomerByPhone(raw)?.id ?? null;
+
+  let card = cardId ? db.cards.find((c) => c.id === cardId) ?? null : null;
+  if (!card && customerId) {
+    card = db.cards.find((c) => c.businessId === business.id && c.customerId === customerId) ?? null;
+  }
+  if (!card) throw new Error("No stamp card found for that customer.");
+  if (card.businessId !== business.id) throw new Error("This card belongs to a different restaurant, not yours.");
+  return card;
+}
+
+export async function claimAfterVerification(verificationId: string): Promise<{ status: string; cardId?: string; error?: string }> {
+  const v = await getVerificationRequest(verificationId);
+  if (!v) return { status: "not_found", error: "Verification request not found." };
+  if (v.status === "pending") return { status: "pending" };
+  if (v.status === "rejected") return { status: "rejected", error: "Your request was rejected — please see staff." };
+  if (v.status !== "approved") return { status: v.status, error: "Verification failed." };
+  if (+new Date(v.expiresAt) < Date.now()) return { status: "expired", error: "Verification request has expired." };
+  const card = await getCardFor(v.businessId, v.customerId);
+  return card ? { status: "claimed", cardId: card.id } : { status: "not_found", error: "Stamp card not found." };
+}
+
 export async function createStampToken(businessId: string): Promise<StampToken> {
   const db = read();
   // single active token per business — rotate on each generation
   db.tokens = db.tokens.filter((t) => !(t.businessId === businessId && !t.used));
   const token: StampToken = {
-    code: Math.random().toString(36).slice(2, 8).toUpperCase(),
+    code: newCode(),
     businessId,
-    expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+    expiresAt: new Date(Date.now() + TOKEN_TTL_MS).toISOString(),
     used: false,
   };
   db.tokens.push(token);
@@ -253,11 +404,17 @@ export async function redeemStampToken(businessId: string, code: string, custome
   if (!token) return { ok: false, error: "Invalid code. Ask staff for the current code." };
   if (token.used) return { ok: false, error: "This code has already been used." };
   if (+new Date(token.expiresAt) < Date.now()) return { ok: false, error: "This code has expired." };
-  token.used = true;
-  token.usedByCustomerId = customerId;
-  write(db);
+  // Stamp first. Only consume the code if the stamp actually landed, so a
+  // cooldown/full-card failure does not burn a valid counter code.
   const res = await addStamp(businessId, customerId);
   if (res.error) return { ok: false, error: res.error };
+  const fresh = read();
+  const freshToken = fresh.tokens.find((t) => t.businessId === businessId && t.code === code.toUpperCase());
+  if (freshToken) {
+    freshToken.used = true;
+    freshToken.usedByCustomerId = customerId;
+    write(fresh);
+  }
   return { ok: true, card: res.card };
 }
 
@@ -292,6 +449,22 @@ export async function submitReview(
 ): Promise<SubmitReviewResult> {
   const db = read();
   const rating = Math.min(5, Math.max(1, Math.round(input.rating)));
+  if (input.customerId) {
+    const mine = db.reviews
+      .filter((r) => r.customerId === input.customerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const last = mine[0];
+    if (last && Date.now() - +new Date(last.createdAt) < 60 * 60_000) {
+      throw new Error("You've just left a review — try again later.");
+    }
+  }
+  const recentBonus = input.customerId
+    ? db.reviews.some((r) =>
+        r.customerId === input.customerId &&
+        r.rating >= 4 &&
+        Date.now() - +new Date(r.createdAt) < 7 * 24 * 60 * 60_000
+      )
+    : false;
   const feedback = autoFeedback(db.businesses.find((b) => b.id === businessId)?.name ?? "us", rating);
   // save the review with the customer's name and mobile so the owner can
   // reach them on WhatsApp later
@@ -309,9 +482,12 @@ export async function submitReview(
   };
   db.reviews.push(review);
   write(db);
-  // positive reviewers earn a bonus stamp as a thank-you (subject to normal limits)
+  // Positive reviewers earn one bonus stamp per 7 days, subject to the normal
+  // cooldown/full-card guards.
   let bonus: SubmitReviewResult["bonusStamp"];
-  if (rating >= 4 && input.customerId) bonus = await addStamp(businessId, input.customerId);
+  if (rating >= 4 && input.customerId && !recentBonus) {
+    bonus = await addStamp(businessId, input.customerId);
+  }
   const business = db.businesses.find((b) => b.id === businessId);
   return {
     feedback,

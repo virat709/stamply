@@ -9,7 +9,6 @@ import { Monogram, IconSparkle, Toast } from "@/components/ui";
 
 export default function Onboarding() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
   const [_uid, setUid] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -24,7 +23,6 @@ export default function Onboarding() {
         return;
       }
       setUid(uid);
-      setReady(true);
     });
     return () => {
       active = false;

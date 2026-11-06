@@ -6,7 +6,7 @@ import { requireOwner } from "@/lib/server/store-firestore";
 export const dynamic = "force-dynamic";
 
 /** Read a stamp card. Allowed only for:
- *  - the customer's own device (possession cookie token or header matches), or
+ *  - the customer's own device (matching possession-cookie token), or
  *  - an authenticated owner of the business (dashboard redeem flow).
  *  Card data is never world-readable. */
 export async function GET(req: Request, { params }: { params: Promise<{ cardId: string }> }) {
@@ -18,11 +18,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ cardId: 
 
     const claims = getClaims(req);
     const claim = claims[card.businessId] || claims[card.businessId.toLowerCase()];
-    const clientToken = req.headers.get("x-card-token");
-    let allowed =
-      (claim?.cardId === cardId && claim?.token === card.ownerToken) ||
-      (claim?.cardId.toLowerCase() === cardId.toLowerCase() && claim?.token === card.ownerToken) ||
-      (clientToken && clientToken === card.ownerToken);
+    const sameCard =
+      claim?.cardId === cardId ||
+      claim?.cardId?.toLowerCase() === cardId.toLowerCase();
+    let allowed = !!card.ownerToken && !!claim?.token && sameCard && claim?.token === card.ownerToken;
 
     if (!allowed) {
       try {

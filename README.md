@@ -1,4 +1,4 @@
-# Stamply — Digital Stamp Card Loyalty App
+# Loyalkard — Digital Stamp Card Loyalty App
 
 Replace paper stamp cards with a digital loyalty system for cafés, restaurants, and retail.
 

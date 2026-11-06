@@ -17,7 +17,10 @@ export type ContactInput = z.infer<typeof contactSchema>;
 export const loyaltyRuleSchema = z.object({
   requiredStamps: z.coerce.number().int().min(2).max(100),
   rewardDescription: z.string().trim().min(3, "Describe the reward").max(120),
-  expiresAt: z.string().optional().or(z.literal("")),
+  expiresAt: z.preprocess(
+    (v) => (v === "" || v === undefined ? null : v),
+    z.string().nullable().optional()
+  ),
   // Empty string means "no minimum spend" -> undefined, so an empty field
   // is stored as null instead of being coerced to 0 by z.coerce.number().
   minSpend: z.preprocess(
@@ -49,6 +52,7 @@ export type ReservationInput = z.infer<typeof reservationSchema>;
 // https:// so owners aren't blocked by strict URL validation errors.
 const optionalUrl = z.preprocess(
   (v) => {
+    if (v === undefined || v === null) return "";
     if (typeof v !== "string") return v;
     const s = v.trim();
     if (!s) return "";
@@ -75,3 +79,15 @@ export const profileSchema = z.object({
 });
 
 export type ProfileInput = z.infer<typeof profileSchema>;
+
+/** Server-side allow-list for dashboard business saves. Unknown fields such as
+ *  ownerId/createdAt are stripped before they reach the store. */
+export const businessSaveSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1, "Enter your restaurant's name.").max(80),
+  logoUrl: z.string().trim().max(500).optional(),
+  loyaltyRule: loyaltyRuleSchema,
+  profile: profileSchema.optional(),
+});
+
+export type BusinessSaveInput = z.infer<typeof businessSaveSchema>;

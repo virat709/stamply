@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { signInOwner, signUpOwner, signInOwnerWithGoogle, handleGoogleRedirectResult, firstDashboardPath, currentOwner, resetOwnerPassword } from "@/lib/auth";
 import { isFirebaseConfigured } from "@/lib/firebase";
-import { StamplyMark, IconMail, IconQr, IconShield, IconChart, Toast } from "@/components/ui";
+import { LoyalkardMark, IconMail, IconQr, IconShield, IconChart, Toast } from "@/components/ui";
 
 const inputCls = "input-lux w-full rounded-xl pl-11 pr-4 py-3.5 text-base touch-manipulation";
 const labelCls = "label-lux";
@@ -82,7 +82,7 @@ export default function Login() {
     setError(null);
     setInfo(null);
     try {
-      const res = await signInOwnerWithGoogle();
+      const res = await signInOwnerWithGoogle(rememberMe);
       if (res.redirecting) {
         setInfo("Opening Google sign-in…");
         setTimeout(() => setGoogleBusy(false), 8000);
@@ -107,7 +107,7 @@ export default function Login() {
     setError(null);
     try {
       if (mode === "signup") {
-        const res = await signUpOwner(restaurantName, email, password);
+        const res = await signUpOwner(restaurantName, email, password, rememberMe);
         if (!res.ok) {
           setError(res.error ?? "Could not create the account.");
           return;
@@ -115,7 +115,7 @@ export default function Login() {
         const path = res.business?.id ? `/dashboard/${res.business.id}` : await firstDashboardPath(res.uid!);
         router.push(path); // straight into their brand-new dashboard
       } else {
-        const res = await signInOwner(email, password);
+        const res = await signInOwner(email, password, rememberMe);
         if (!res.ok) {
           setError(res.error ?? "Could not sign in.");
           return;
@@ -139,8 +139,8 @@ export default function Login() {
         <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-indigo-500/10 blur-[110px]" />
 
         <Link href="/" className="relative flex items-center gap-2.5 w-fit">
-          <StamplyMark size={34} />
-          <span className="font-bold text-2xl tracking-tight">Stamply<span className="text-[#d4af37]">.</span></span>
+          <LoyalkardMark size={34} />
+          <span className="font-bold text-2xl tracking-tight">Loyalkard<span className="text-[#d4af37]">.</span></span>
         </Link>
 
         <div className="relative max-w-md">
@@ -198,8 +198,8 @@ export default function Login() {
           <div className="lux-card glow-frame rounded-[30px] p-7 relative overflow-hidden">
             <div className="relative z-10">
               <div className="lg:hidden mb-5 flex items-center gap-2.5">
-                <StamplyMark size={28} />
-                <span className="font-bold text-lg">Stamply<span className="text-[#d4af37]">.</span></span>
+                <LoyalkardMark size={28} />
+                <span className="font-bold text-lg">Loyalkard<span className="text-[#d4af37]">.</span></span>
               </div>
 
             {forgotMode ? (

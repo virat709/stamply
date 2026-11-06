@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/server/select";
 import { requireOwner } from "@/lib/server/store-firestore";
+import { businessSaveSchema } from "@/lib/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,8 @@ export async function GET(req: Request) {
     if (kind === "token-status") {
       const code = url.searchParams.get("code") ?? "";
       if (!businessId || !code) return NextResponse.json({ token: null });
+      const g = await guard(req, businessId);
+      if (g instanceof NextResponse) return g;
       const token = await getStore().getToken(businessId, code);
       return NextResponse.json({ token });
     }
@@ -69,10 +72,6 @@ export async function GET(req: Request) {
     const store = getStore();
 
     switch (kind) {
-      case "token-status": {
-        const token = await store.getToken(businessId!, url.searchParams.get("code") ?? "");
-        return NextResponse.json({ token });
-      }
       case "verifications":
         return NextResponse.json({ requests: await store.listPendingVerifications(businessId!) });
       case "stats":
@@ -93,17 +92,26 @@ export async function POST(req: Request) {
     const action = String(body.action ?? "");
     const store = getStore();
 
-    if (action === "seed-demo") {
-      await store.seedDemo();
-      return NextResponse.json({ ok: true });
-    }
-
     const businessId = body.businessId ? String(body.businessId) : undefined;
     // For save-business, derive businessId from the payload if not provided.
     const effectiveBusinessId =
       action === "save-business" && body.business?.id
         ? String(body.business.id)
         : businessId;
+
+    const KNOWN_ACTIONS = new Set([
+      "create-business", "save-business", "mint-token", "add-stamp-contact",
+      "add-stamp-customer", "lookup-card", "redeem", "accept-verification",
+    ]);
+    const BUSINESS_ACTIONS = new Set([
+      "save-business", "mint-token", "add-stamp-contact", "add-stamp-customer",
+      "lookup-card", "redeem", "accept-verification",
+    ]);
+    if (!KNOWN_ACTIONS.has(action)) return NextResponse.json({ error: "Unknown action." }, { status: 400 });
+    if (BUSINESS_ACTIONS.has(action) && !effectiveBusinessId) {
+      return NextResponse.json({ error: "businessId is required for this action." }, { status: 400 });
+    }
+
     const g = effectiveBusinessId ? await guard(req, effectiveBusinessId) : await guard(req);
     if (g instanceof NextResponse) return g;
     const { uid } = g;
@@ -123,9 +131,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ business });
       }
       case "save-business": {
-        const b = body.business as Record<string, unknown>;
-        if (!b || typeof b.id !== "string") return NextResponse.json({ error: "Invalid business." }, { status: 400 });
-        await store.saveBusiness(b as never, uid);
+        const parsed = businessSaveSchema.safeParse(body.business);
+        if (!parsed.success) {
+          return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid business." }, { status: 400 });
+        }
+        await store.saveBusiness(parsed.data as never, uid);
         return NextResponse.json({ ok: true });
       }
       case "mint-token": {
@@ -183,12 +193,19 @@ export async function POST(req: Request) {
         return NextResponse.json({ card: { id: card.id, currentStamps: card.currentStamps, totalRedemptions: card.totalRedemptions, customerId: card.customerId } });
       }
       case "redeem": {
-        // Accept either a card id or a customer id.
+        // Accept either a card id or a customer id, but never redeem a card
+        // that belongs to another business.
         let cardId = body.cardId ? String(body.cardId) : "";
         if (!cardId && body.customerId) {
           const c = await store.getCardFor(businessId!, String(body.customerId));
           if (!c) return NextResponse.json({ error: "No stamp card found for this customer." }, { status: 404 });
           cardId = c.id;
+        }
+        if (!cardId) return NextResponse.json({ error: "cardId or customerId is required." }, { status: 400 });
+        const card = await store.getCard(cardId);
+        if (!card) return NextResponse.json({ error: "No stamp card found for this customer." }, { status: 404 });
+        if (card.businessId !== businessId) {
+          return NextResponse.json({ error: "This card belongs to a different restaurant, not yours." }, { status: 403 });
         }
         const res = await store.redeemReward(businessId!, cardId);
         if (typeof res !== "string") return NextResponse.json({ card: res });

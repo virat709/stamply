@@ -5,7 +5,8 @@ import { randomBytes } from "node:crypto";
 import type { Business, BusinessStats, Customer, Review, StampCard, StampToken, VerificationRequest } from "@/lib/types";
 import { autoFeedback } from "@/lib/review-feedback";
 import {
-  cardIdFor, normalizePhone, stampGuard, VERIFICATION_TTL_MS, type Store,
+  cardIdFor, newStampCode, normalizePhone, stampGuard, TOKEN_TTL_MS,
+  VERIFICATION_TTL_MS, type Store,
 } from "./store";
 
 // Single-file store used when no Firebase service account is configured
@@ -38,13 +39,13 @@ function now(): string {
 }
 
 function read(): FileDB {
-  if (globalThis.__stamplyFileDb) return globalThis.__stamplyFileDb;
+  if (globalThis.__loyalkardFileDb) return globalThis.__loyalkardFileDb;
   try {
     if (fsSync.existsSync(DATA_FILE)) {
       const content = fsSync.readFileSync(DATA_FILE, "utf-8");
       if (content.trim()) {
         const parsed = JSON.parse(content);
-        globalThis.__stamplyFileDb = {
+        globalThis.__loyalkardFileDb = {
           ...blank(),
           ...parsed,
           businesses: Array.isArray(parsed.businesses) ? parsed.businesses : [],
@@ -55,17 +56,17 @@ function read(): FileDB {
           reviews: Array.isArray(parsed.reviews) ? parsed.reviews : [],
           verifications: parsed.verifications && typeof parsed.verifications === "object" ? parsed.verifications : {},
         };
-        return globalThis.__stamplyFileDb!;
+        return globalThis.__loyalkardFileDb!;
       }
     }
   } catch (err) {
     console.error("Error reading db.json:", err);
   }
-  return (globalThis.__stamplyFileDb = blank());
+  return (globalThis.__loyalkardFileDb = blank());
 }
 
 function write(db: FileDB): void {
-  globalThis.__stamplyFileDb = db;
+  globalThis.__loyalkardFileDb = db;
   fs.mkdir(DATA_DIR, { recursive: true }).then(() =>
     fs.writeFile(DATA_FILE, JSON.stringify(db, null, 2), "utf-8")
   ).catch((err) => {
@@ -74,7 +75,7 @@ function write(db: FileDB): void {
 }
 
 declare global {
-  var __stamplyFileDb: FileDB | undefined;
+  var __loyalkardFileDb: FileDB | undefined;
 }
 
 function maxStamps(b?: Business | null): number {
@@ -157,15 +158,18 @@ class FileStore implements Store {
 
   async findCustomerByPhone(phone: string): Promise<Customer | null> {
     const n = normalizePhone(phone);
+    const customers = read().customers;
     // Primary: exact normalized match (e.g. "+15550102233" === "+15550102233")
-    const exact = read().customers.find((c) => (c.phoneNumber ?? "").replace(/[^0-9+]/g, "") === n);
+    const exact = customers.find((c) => (c.phoneNumber ?? "").replace(/[^0-9+]/g, "") === n);
     if (exact) return exact;
-    // Fallback: compare just the digits so "+15550102233" matches "5550102233"
+    // Fallback: exact digits only, so "+15550102233" still matches
+    // "15550102233". Never suffix-match: that can hand one customer's card to
+    // someone with a similar-looking number.
     const queryDigits = n.replace(/\D/g, "");
     if (queryDigits.length < 7) return null;
-    return read().customers.find((c) => {
+    return customers.find((c) => {
       const stored = (c.phoneNumber ?? "").replace(/\D/g, "");
-      return stored.endsWith(queryDigits) || queryDigits.endsWith(stored);
+      return stored.length >= 7 && stored === queryDigits;
     }) ?? null;
   }
   async findCustomerByEmail(email: string): Promise<Customer | null> {
@@ -225,8 +229,7 @@ class FileStore implements Store {
     }
     t.used = true;
     t.usedByCustomerId = customerId;
-    write(db);
-    // stampLog applies the +1 to the untouched card state.
+    // stampLog persists the token consumption and the +1 in one file write.
     return stampLog(db, businessId, customerId, card);
   }
 
@@ -255,7 +258,9 @@ class FileStore implements Store {
     const db = read();
     const card = db.cards.find((c) => c.id === cardId);
     if (!card) return "No stamp card found for this customer.";
+    if (card.businessId !== businessId) return "This card belongs to a different restaurant.";
     const business = db.businesses.find((b) => b.id === businessId);
+    if (!business) return "Business not found.";
     const max = maxStamps(business);
     if (card.currentStamps < max) return `Not enough stamps yet (${card.currentStamps}/${max}).`;
     card.currentStamps = 0;
@@ -270,11 +275,15 @@ class FileStore implements Store {
   async createToken(businessId: string): Promise<StampToken> {
     const db = read();
     const bId = (businessId || "").toLowerCase();
-    let code = Math.random().toString(36).slice(2, 8).toUpperCase();
-    while (db.tokens[`${code}_${businessId}`] || db.tokens[`${code}_${bId}`]) {
-      code = Math.random().toString(36).slice(2, 8).toUpperCase();
+    // Rotate: only the newest unused code may be valid.
+    for (const [key, t] of Object.entries(db.tokens)) {
+      if ((t.businessId || "").toLowerCase() === bId && !t.used) delete db.tokens[key];
     }
-    const t: StampToken = { code, businessId, expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(), used: false };
+    let code = newStampCode();
+    while (db.tokens[`${code}_${businessId}`] || db.tokens[`${code}_${bId}`]) {
+      code = newStampCode();
+    }
+    const t: StampToken = { code, businessId, expiresAt: new Date(Date.now() + TOKEN_TTL_MS).toISOString(), used: false };
     db.tokens[`${code}_${businessId}`] = t;
     db.tokens[`${code}_${bId}`] = t;
     write(db);

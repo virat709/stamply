@@ -2,28 +2,23 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 
 // ---------- Brand ----------
-export function StamplyMark({ size = 34, className = "" }: { size?: number; className?: string }) {
+export function LoyalkardMark({ size = 34, className = "" }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" className={className} aria-hidden>
       <defs>
-        <linearGradient id="sm-gold" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id="lk-gold" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#f7e7ae" />
           <stop offset="0.55" stopColor="#d4af37" />
           <stop offset="1" stopColor="#8a6d1f" />
         </linearGradient>
       </defs>
-      <circle cx="20" cy="20" r="18" stroke="url(#sm-gold)" strokeWidth="2.4" strokeDasharray="3 2.4" />
-      <circle cx="20" cy="20" r="12.5" fill="url(#sm-gold)" opacity="0.16" />
+      <circle cx="20" cy="20" r="18" stroke="url(#lk-gold)" strokeWidth="2" strokeDasharray="4 3" opacity="0.7" />
+      <rect x="9" y="13" width="22" height="16" rx="3.5" stroke="url(#lk-gold)" strokeWidth="1.8" fill="url(#lk-gold)" fillOpacity="0.12" />
       <path
-        d="M13 17.5h12.4l-1.5 6.2a2.6 2.6 0 0 1-2.5 2H17a2.6 2.6 0 0 1-2.5-2.1L13 17.5Z"
-        stroke="url(#sm-gold)"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-        fill="none"
+        d="M20 24.6c-3.7-2.3-5.9-4.4-5.9-6.6 0-1.6 1.3-2.9 2.9-2.9 1.1 0 2.1.6 3 1.5.9-.9 1.9-1.5 3-1.5 1.6 0 2.9 1.3 2.9 2.9 0 2.2-2.2 4.3-5.9 6.6Z"
+        fill="url(#lk-gold)"
       />
-      <path d="M25.6 18.4h1.6a2.2 2.2 0 0 1 0 4.4h-1.3" stroke="url(#sm-gold)" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M16 14.2v-1.4M20 14.2v-2.6M24 14.2v-1.4" stroke="url(#sm-gold)" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M15.5 28.4h9" stroke="url(#sm-gold)" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12 13v-2.2M28 13v-2.2" stroke="url(#lk-gold)" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }

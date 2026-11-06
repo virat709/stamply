@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
@@ -10,20 +10,20 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   getBusiness, saveBusiness, addStampByContact, redeemReward,
   createStampToken, getStampToken, getBusinessStats, lookupCard,
-  listReviews,
+  listReviews, listVerificationRequests, approveVerificationRequest,
 } from "@/lib/db";
 import { loyaltyRuleSchema, profileSchema } from "@/lib/schemas";
 import { whatsappLink } from "@/lib/whatsapp";
 import { currentOwner, signOutOwner } from "@/lib/auth";
-import { CountUp, Skeleton, Toast, IconChart, IconQr, IconTicket, IconSparkle, Monogram } from "@/components/ui";
+import { CountUp, Skeleton, Toast, IconChart, IconTicket, IconSparkle, Monogram } from "@/components/ui";
 import { motion, AnimatePresence } from "framer-motion";
 import { z } from "zod";
-import type { Business, BusinessStats, Review, StampCard, StampToken, Customer, RestaurantType } from "@/lib/types";
+import type { Business, BusinessStats, Review, StampCard, StampToken, Customer, RestaurantType, VerificationRequest } from "@/lib/types";
 import { detectRestaurantType } from "@/lib/types";
 import { StampIcon } from "@/components/StampGrid";
 
 // ─── layout constants ─────────────────────────────────────────────────────────
-type Tab = "home" | "redeem" | "overview" | "settings";
+type Tab = "home" | "redeem" | "verify" | "overview" | "settings";
 
 const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base focus:outline-none focus:border-[#d4af37]/60 focus:ring-1 focus:ring-[#d4af37]/40 input-lux touch-manipulation cursor-text";
 const cardCls = "lux-card rounded-2xl p-5";
@@ -32,6 +32,7 @@ const cardCls = "lux-card rounded-2xl p-5";
 const NAV: { t: Tab; label: string; emoji: string }[] = [
   { t: "home", label: "Home", emoji: "🏠" },
   { t: "redeem", label: "Redeem", emoji: "🎁" },
+  { t: "verify", label: "Verify", emoji: "✅" },
   { t: "overview", label: "Overview", emoji: "📊" },
   { t: "settings", label: "Settings", emoji: "⚙️" },
 ];
@@ -43,7 +44,7 @@ export function QrDownloadButtons({ svg, filenameBase, onDone }: {
   onDone: (msg: string, kind?: "ok" | "error") => void;
 }) {
   function resolveSvg(): SVGSVGElement | null {
-    return svg ?? document.querySelector("svg");
+    return svg;
   }
   async function png() {
     const el = resolveSvg();
@@ -173,6 +174,7 @@ export default function Dashboard() {
           >
             {tab === "home" && <HomeTab business={business} onSaved={setBusiness} />}
             {tab === "redeem" && <RedeemPanel businessId={params.businessId} />}
+            {tab === "verify" && <VerifyPanel businessId={params.businessId} />}
             {tab === "overview" && <Overview stats={stats} business={business} />}
             {tab === "settings" && (
               <section className="space-y-5 pt-2">
@@ -226,15 +228,9 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
   const [busy, setBusy] = useState(false);
   const [counterQrEl, setCounterQrEl] = useState<SVGSVGElement | null>(null);
   const [toast, setToast] = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
-  const [origin, setOrigin] = useState("");
+  const [origin] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
-    }
-  }, []);
-
-  async function generate() {
+  const generate = useCallback(async () => {
     setBusy(true);
     try {
       const freshToken = await createStampToken(businessId);
@@ -248,12 +244,14 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
     } finally {
       setBusy(false);
     }
-  }
-
-  // Auto-generate code immediately on mount so cashier never sees an empty box
-  useEffect(() => {
-    generate();
   }, [businessId]);
+
+  // Auto-generate code on mount so the cashier never sees an empty box.
+  // Deferred to a timeout so the effect does not synchronously set state.
+  useEffect(() => {
+    const id = setTimeout(() => { void generate(); }, 0);
+    return () => clearTimeout(id);
+  }, [generate]);
 
   // Polling for token usage (detect when a customer scans and collects the stamp)
   const tokenCode = token?.code;
@@ -268,15 +266,20 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
           setToast({ msg: "✓ Customer collected stamp! Rotating QR code…" });
           // Automatically change the QR code after scan is completed
           setTimeout(() => {
-            generate();
+            void generate();
           }, 800);
+        } else if (fresh && +new Date(fresh.expiresAt) <= Date.now()) {
+          // A counter code is only valid for five minutes. Rotate it before a
+          // customer scans a dead QR.
+          setToast({ msg: "Code expired — minting a fresh one…" });
+          void generate();
         }
       } catch {
         /* ignore network poll glitches */
       }
     }, 1200);
     return () => clearInterval(t);
-  }, [businessId, tokenCode, tokenUsed]);
+  }, [businessId, tokenCode, tokenUsed, generate]);
 
   const qrUrl = token?.code ? `${origin || ""}/b/${businessId}?collect=${token.code}` : "";
 
@@ -371,7 +374,7 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
 
           <QrDownloadButtons
             svg={counterQrEl}
-            filenameBase={`stamply-counter-qr-${businessId}`}
+            filenameBase={`loyalkard-counter-qr-${businessId}`}
             onDone={(m, k) => setToast({ msg: m, kind: k })}
           />
         </>
@@ -515,7 +518,7 @@ function CommunityQrCard({ business, onSaved }: { business: Business; onSaved: (
 
           <QrDownloadButtons
             svg={qrEl}
-            filenameBase={`stamply-community-qr-${business.id}`}
+            filenameBase={`loyalkard-community-qr-${business.id}`}
             onDone={(m, k) => setToast({ msg: m, kind: k })}
           />
           <p className="text-[10px] text-neutral-500 mt-2">Print for table tents or entrance posters</p>
@@ -874,6 +877,100 @@ function RedeemPanel({ businessId }: { businessId: string }) {
   );
 }
 
+// ─── Verify tab: approve returning customers ────────────────────────────────
+function VerifyPanel({ businessId }: { businessId: string }) {
+  const [requests, setRequests] = useState<VerificationRequest[] | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ text: string; kind: "ok" | "error" } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setRequests(await listVerificationRequests(businessId));
+    } catch (e) {
+      setRequests([]);
+      setMsg({ text: (e as Error).message || "Could not load pending verifications.", kind: "error" });
+    }
+  }, [businessId]);
+
+  useEffect(() => {
+    const first = setTimeout(() => { void load(); }, 0);
+    const t = setInterval(() => { void load(); }, 4_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
+  }, [load]);
+
+  async function accept(id: string) {
+    setBusyId(id);
+    setMsg(null);
+    try {
+      const res = await approveVerificationRequest(businessId, id);
+      if (!res.ok) {
+        setMsg({ text: res.error || "Could not approve this request.", kind: "error" });
+      } else {
+        setMsg({ text: `Approved — stamp added${res.card ? ` (${res.card.currentStamps} total)` : ""}.`, kind: "ok" });
+      }
+      await load();
+    } catch (e) {
+      setMsg({ text: (e as Error).message || "Could not approve this request.", kind: "error" });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="space-y-5 pt-2">
+      <div className={cardCls}>
+        <p className="text-[9px] tracking-[0.3em] uppercase text-[#d4af37]">Staff verification</p>
+        <h2 className="mt-1 font-bold">Returning customers</h2>
+        <p className="mt-1 text-sm text-neutral-400">
+          Approve only the person standing in front of you. Approval grants card access and adds their stamp.
+        </p>
+      </div>
+
+      {msg && (
+        <p className={`text-sm font-medium rounded-xl px-4 py-3
+          ${msg.kind === "ok" ? "bg-emerald-400/10 text-emerald-300" : "bg-red-400/10 text-red-400"}`}>
+          {msg.text}
+        </p>
+      )}
+
+      {requests === null ? (
+        <div className={cardCls + " text-sm text-neutral-400"}>Loading waiting customers…</div>
+      ) : requests.length === 0 ? (
+        <div className={cardCls + " text-center py-8"}>
+          <div className="text-3xl">🪑</div>
+          <p className="mt-2 font-semibold">No customers waiting</p>
+          <p className="mt-1 text-sm text-neutral-500">New approval requests appear here automatically.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((r) => (
+            <div key={r.id} className={cardCls + " flex items-center gap-3"}>
+              <div className="min-w-0 flex-1">
+                <p className="font-bold truncate">{r.name || "Walk-in customer"}</p>
+                <p className="text-sm text-neutral-400 truncate">{r.phone}</p>
+                <p className="mt-1 text-[11px] text-neutral-500">
+                  Requested {new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => accept(r.id)}
+                disabled={busyId === r.id}
+                className="btn-gold shrink-0 rounded-full px-4 py-2 text-sm font-bold disabled:opacity-60"
+              >
+                {busyId === r.id ? "Approving…" : "Approve"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Settings tab contents ────────────────────────────────────────────────────
 function RulesForm({ business, onSaved }: { business: Business; onSaved: (b: Business) => void }) {
   const [saving, setSaving] = useState(false);
@@ -953,7 +1050,7 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
   );
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
-  const { register, handleSubmit, formState: { errors } } = useForm<
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<
     z.input<typeof profileSchema>, unknown, z.output<typeof profileSchema>
   >({
     resolver: zodResolver(profileSchema),
@@ -967,6 +1064,11 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
       googleReviewUrl: p.googleReviewUrl ?? "",
     },
   });
+  // The community QR card can save a URL from another part of the dashboard;
+  // keep this controlled field in sync instead of showing a stale value.
+  useEffect(() => {
+    setValue("communityUrl", p.communityUrl ?? "");
+  }, [p.communityUrl, setValue]);
   const orUndef = (s: string | undefined) => (s && s.trim() !== "" ? s : undefined);
   return (
     <form className={cardCls + " space-y-4"}
@@ -984,7 +1086,7 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
               menuUrl: orUndef(v.menuUrl),
               googleReviewUrl: orUndef(v.googleReviewUrl),
               restaurantType: selectedType,
-              reservationsEnabled: false,
+              reservationsEnabled: p.reservationsEnabled ?? false,
             },
           };
           await saveBusiness(updated);
@@ -1126,7 +1228,7 @@ function ReviewsPanel({ businessId }: { businessId: string }) {
                 </div>
                 <span className="text-[10px] uppercase tracking-widest text-neutral-600 shrink-0 mt-1">auto-reply ✓</span>
               </div>
-              {r.comment && <p className="mt-2 text-neutral-200">"{r.comment}"</p>}
+              {r.comment && <p className="mt-2 text-neutral-200">&ldquo;{r.comment}&rdquo;</p>}
               <p className="mt-1.5 text-xs text-[#f0d98c]">↩︎ {r.autoReply}</p>
             </li>
           ))}

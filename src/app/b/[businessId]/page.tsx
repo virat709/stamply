@@ -8,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
 import { contactSchema, type ContactInput } from "@/lib/schemas";
 import { getBusiness, submitCollect } from "@/lib/db";
-import { Monogram, StamplyMark, IconUser, IconWhatsapp, IconSparkle } from "@/components/ui";
+import { Monogram, LoyalkardMark, IconUser, IconWhatsapp, IconSparkle } from "@/components/ui";
 import type { Business } from "@/lib/types";
 import { detectRestaurantType } from "@/lib/types";
 import { StampIcon } from "@/components/StampGrid";
@@ -94,7 +94,6 @@ function JoinInner() {
           cardId: res.cardId,
           name: values.name,
           phone: values.phoneNumber || "",
-          cardToken: (res as { cardToken?: string }).cardToken || "",
         });
         const bKey = params.businessId ? decodeURIComponent(params.businessId) : "";
         if (bKey) {
@@ -104,9 +103,6 @@ function JoinInner() {
         if (business?.id && business.id !== bKey) {
           localStorage.setItem(`currentCustomer_${business.id}`, payload);
           localStorage.setItem(`currentCustomer_${business.id.toLowerCase()}`, payload);
-        }
-        if ((res as { cardToken?: string }).cardToken) {
-          localStorage.setItem(`cardToken_${res.cardId}`, (res as { cardToken?: string }).cardToken!);
         }
       } catch {
         /* private mode — the flow still works via cookies */
@@ -254,7 +250,7 @@ function JoinInner() {
         </div>
 
         <div className="mt-6 flex items-center justify-center gap-2 text-[10px] tracking-[0.3em] uppercase text-neutral-600">
-          <StamplyMark size={16} /> powered by stamply
+          <LoyalkardMark size={16} /> powered by loyalkard
         </div>
       </motion.div>
     </main>

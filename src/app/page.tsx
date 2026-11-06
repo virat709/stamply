@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { StamplyMark, IconQr, IconShield, IconChart, IconSparkle, Reveal } from "@/components/ui";
-import { type PointerEvent, useEffect } from "react";
-import { ensureDemoBusiness } from "@/lib/auth";
-import { isFirebaseConfigured } from "@/lib/firebase";
+import { LoyalkardMark, IconQr, IconShield, IconChart, IconSparkle, Reveal } from "@/components/ui";
+import { type PointerEvent } from "react";
+
 
 const FEATURED = ["Ember & Oak", "Casa Verde", "Maison Brioche", "The Copper Kettle", "Sakura Ramen", "Bloom Bakery"];
 
@@ -121,11 +120,6 @@ function MonogramMini() {
 }
 
 export default function Home() {
-  // Seed the demo business into Firestore once, so every "demo" link on this
-  // page (owner console, customer flow) resolves in Firebase mode too.
-  useEffect(() => {
-    if (isFirebaseConfigured) ensureDemoBusiness().catch(() => {});
-  }, []);
   return (
     <div className="flex-1">
       {/* ---------------- nav ---------------- */}
@@ -135,8 +129,8 @@ export default function Home() {
       >
         <div className="glass rounded-full flex items-center justify-between sm:justify-start gap-2.5 sm:gap-6 pl-4 sm:pl-5 pr-2 py-1.5 sm:py-2 max-w-xl w-full sm:w-auto shadow-lg">
           <Link href="/" className="flex items-center gap-2">
-            <StamplyMark size={28} />
-            <span className="font-bold text-base sm:text-lg tracking-tight">Stamply<span className="text-[#d4af37]">.</span></span>
+            <LoyalkardMark size={28} />
+            <span className="font-bold text-base sm:text-lg tracking-tight">Loyalkard<span className="text-[#d4af37]">.</span></span>
           </Link>
           <div className="hidden sm:flex items-center gap-5 text-sm text-neutral-400">
             <a href="#magic" className="hover:text-[#f0d98c] transition">The magic</a>
@@ -212,7 +206,7 @@ export default function Home() {
       </section>
 
       {/* ---------------- marquee ---------------- */}
-      <section id="proof" aria-label="Businesses running Stamply" className="relative py-8 border-y border-white/5 bg-white/[0.015] overflow-hidden">
+      <section id="proof" aria-label="Businesses running Loyalkard" className="relative py-8 border-y border-white/5 bg-white/[0.015] overflow-hidden">
         <div className="marquee-track">
           {[...FEATURED, ...FEATURED].map((name, i) => (
             <span key={i} className="flex items-center gap-14 whitespace-nowrap">
@@ -319,7 +313,7 @@ export default function Home() {
       <footer className="px-6 pb-10">
         <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 text-sm text-neutral-500">
-            <StamplyMark size={22} /> Stamply · © 2026 · The new alchemy of loyalty
+            <LoyalkardMark size={22} /> Loyalkard · © 2026 · The new alchemy of loyalty
           </div>
           <p className="text-[11px] text-neutral-600 tracking-widest uppercase">Demo mode · data saved locally · add Firebase keys to go live</p>
         </div>
