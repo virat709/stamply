@@ -50,6 +50,11 @@ export const metadata: Metadata = {
   ],
   referrer: "origin-when-cross-origin",
   formatDetection: { telephone: false, address: false, email: false },
+  appleWebApp: {
+    capable: true,
+    title: SITE_NAME,
+    statusBarStyle: "black-translucent",
+  },
   openGraph: {
     type: "website",
     siteName: SITE_NAME,

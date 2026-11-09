@@ -47,7 +47,9 @@ export function organizationSchema() {
     url: SITE_OWNER_URL,
     logo: {
       "@type": "ImageObject",
-      url: `${SITE_URL}/icon.svg`,
+      url: `${SITE_URL}/logo-512.png`,
+      width: 512,
+      height: 512,
     },
     sameAs: [SITE_OWNER_URL],
     description:

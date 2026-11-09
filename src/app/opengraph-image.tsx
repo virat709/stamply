@@ -1,4 +1,10 @@
+/* eslint-disable @next/next/no-img-element */
 import { ImageResponse } from "next/og";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const logoPng = readFileSync(join(process.cwd(), "public/logo-512.png"));
+const logoSrc = `data:image/png;base64,${logoPng.toString("base64")}`;
 
 export const alt = "Loyalkard — digital stamp cards for cafés, restaurants and retail";
 export const size = {
@@ -24,22 +30,13 @@ export default function Image() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center" }}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 32,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "linear-gradient(135deg, #f7e7ae, #d4af37)",
-              color: "#211705",
-              fontSize: 30,
-              fontWeight: 700,
-            }}
-          >
-            L
-          </div>
+          <img
+            src={logoSrc}
+            width={76}
+            height={76}
+            alt=""
+            style={{ width: 76, height: 76, objectFit: "contain" }}
+          />
           <div style={{ display: "flex", flexDirection: "column", marginLeft: 18 }}>
             <span style={{ fontSize: 30, fontWeight: 700 }}>Loyalkard</span>
             <span style={{ fontSize: 16, color: "#d4af37", letterSpacing: 5 }}>

@@ -41,6 +41,7 @@ With Firebase env keys set (`.env.local`) but **no service account**, the app ru
 ## SEO, trust and legal pages
 - Marketing/trust pages: `/about`, `/contact`, `/security`, `/privacy`, `/terms`, `/cookies`.
 - Generated `sitemap.xml`, `robots.txt`, Open Graph image and Twitter image (`src/app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`, `twitter-image.tsx`).
+- Brand icons and manifest: `src/app/favicon.ico`, `src/app/apple-icon.png`, `src/app/icon.svg`, and `/manifest.webmanifest` (`src/app/manifest.ts`). Raster logos for social cards and Organization schema live in `public/logo-512.png`, `public/icon-192.png`, `public/icon-512.png`, and `public/apple-touch-icon.png`. Regenerate these from `src/app/icon.svg` if the brand mark changes.
 - Canonical URLs, Open Graph/Twitter metadata, Organization/WebPage/Breadcrumb/FAQ JSON-LD.
 - Set `NEXT_PUBLIC_SITE_URL` in production (defaults to `https://stamp.v4stay.com`). Update the support/privacy emails in `src/lib/site.ts` before launch.
 

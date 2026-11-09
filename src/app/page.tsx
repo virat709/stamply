@@ -82,7 +82,9 @@ const jsonLd = {
       url: SITE_OWNER_URL,
       logo: {
         "@type": "ImageObject",
-        url: `${SITE_URL}/icon.svg`,
+        url: `${SITE_URL}/logo-512.png`,
+        width: 512,
+        height: 512,
       },
       sameAs: [SITE_OWNER_URL],
       description:
@@ -133,6 +135,7 @@ const jsonLd = {
       url: SITE_URL,
       description:
         "Loyalkard is digital stamp card software that replaces paper loyalty cards with QR-based cards, staff-verified stamps, reward redemption, customer analytics and Google review prompts.",
+      image: `${SITE_URL}/logo-512.png`,
       publisher: { "@id": `${SITE_URL}/#organization` },
       audience: {
         "@type": "BusinessAudience",
