@@ -38,6 +38,12 @@ With Firebase env keys set (`.env.local`) but **no service account**, the app ru
    ```
 5. Publish `firestore.rules` (Firebase console → Firestore → Rules).
 
+## SEO, trust and legal pages
+- Marketing/trust pages: `/about`, `/contact`, `/security`, `/privacy`, `/terms`, `/cookies`.
+- Generated `sitemap.xml`, `robots.txt`, Open Graph image and Twitter image (`src/app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`, `twitter-image.tsx`).
+- Canonical URLs, Open Graph/Twitter metadata, Organization/WebPage/Breadcrumb/FAQ JSON-LD.
+- Set `NEXT_PUBLIC_SITE_URL` in production (defaults to `https://stamp.v4stay.com`). Update the support/privacy emails in `src/lib/site.ts` before launch.
+
 ## Folder layout
 ```
 src/

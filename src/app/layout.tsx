@@ -1,5 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Fraunces } from "next/font/google";
+import {
+  SITE_DESCRIPTION,
+  SITE_NAME,
+  SITE_OWNER,
+  SITE_OWNER_URL,
+  SITE_TITLE,
+  SITE_URL,
+} from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -20,8 +28,47 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Loyalkard — Luxury Digital Stamp Cards",
-  description: "The new alchemy of loyalty. Digital stamp cards for cafés, restaurants and retail — no paper, no downloads, no fraud.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: SITE_TITLE,
+    template: `%s · ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  authors: [{ name: SITE_OWNER, url: SITE_OWNER_URL }],
+  creator: SITE_OWNER,
+  publisher: SITE_OWNER,
+  category: "Business software",
+  keywords: [
+    "digital stamp card",
+    "digital loyalty card",
+    "stamp card software",
+    "café loyalty program",
+    "restaurant loyalty app",
+    "digital punch card",
+    "customer retention software",
+  ],
+  referrer: "origin-when-cross-origin",
+  formatDetection: { telephone: false, address: false, email: false },
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
 };
 
 export const viewport: Viewport = {

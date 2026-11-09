@@ -431,6 +431,15 @@ export default function Login() {
               Try the demo console →
             </Link>
           </p>
+          <p className="mt-3 text-center text-[11px] text-neutral-600">
+            <Link href="/privacy" className="hover:text-[#f0d98c] transition">Privacy</Link>
+            {" · "}
+            <Link href="/terms" className="hover:text-[#f0d98c] transition">Terms</Link>
+            {" · "}
+            <Link href="/cookies" className="hover:text-[#f0d98c] transition">Cookies</Link>
+            {" · "}
+            <Link href="/security" className="hover:text-[#f0d98c] transition">Security</Link>
+          </p>
         </motion.div>
       </div>
       <Toast toast={null} onDone={() => {}} />
