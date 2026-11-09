@@ -108,7 +108,7 @@ const jsonLd = {
       inLanguage: "en",
       isPartOf: { "@id": `${SITE_URL}/#website` },
       about: { "@id": `${SITE_URL}/#software` },
-      primaryImageOfPage: `${SITE_URL}/opengraph-image`,
+      primaryImageOfPage: `${SITE_URL}/opengraph-image?v=${SITE_LAST_UPDATED}`,
       dateModified: SITE_LAST_UPDATED,
       publisher: { "@id": `${SITE_URL}/#organization` },
       breadcrumb: { "@id": `${SITE_URL}/#breadcrumb` },
