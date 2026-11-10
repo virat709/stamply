@@ -39,11 +39,19 @@ With Firebase env keys set (`.env.local`) but **no service account**, the app ru
 5. Publish `firestore.rules` (Firebase console → Firestore → Rules).
 
 ## SEO, trust and legal pages
-- Marketing/trust pages: `/about`, `/contact`, `/security`, `/privacy`, `/terms`, `/cookies`.
+- Marketing/trust pages: `/pricing`, `/about`, `/contact`, `/security`, `/privacy`, `/terms`, `/cookies`.
 - Generated `sitemap.xml`, `robots.txt`, Open Graph image and Twitter image (`src/app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`, `twitter-image.tsx`).
 - Brand icons and manifest: `src/app/favicon.ico`, `src/app/apple-icon.png`, `src/app/icon.svg`, and `/manifest.webmanifest` (`src/app/manifest.ts`). Raster logos for social cards and Organization schema live in `public/logo-512.png`, `public/icon-192.png`, `public/icon-512.png`, and `public/apple-touch-icon.png`. Regenerate these from `src/app/icon.svg` if the brand mark changes.
-- Canonical URLs, Open Graph/Twitter metadata, Organization/WebPage/Breadcrumb/FAQ JSON-LD.
+- Canonical URLs, Open Graph/Twitter metadata, Organization/WebPage/Breadcrumb/FAQ/Product JSON-LD.
+- Private app routes (`/dashboard`, `/onboarding`, `/card`) and customer join pages are marked `noindex`; the public marketing pages are indexable.
 - Set `NEXT_PUBLIC_SITE_URL` in production (defaults to `https://stamp.v4stay.com`). Update the support/privacy emails in `src/lib/site.ts` before launch.
+
+## Page previews, analytics and security
+- Owners can upload a business logo in **Settings → Business logo**. Uploads are resized to 256×256 and stored as a data URL on the business record, so they appear on the customer card, join page and generated per-business link preview.
+- Each business gets its own Open Graph image at `/b/[businessId]/opengraph-image` showing its name, reward and initials/logo.
+- Vercel Analytics and Speed Insights are mounted in the root layout. No extra keys are required on Vercel.
+- `next.config.ts` sets baseline security headers (nosniff, frame protection, referrer policy, permissions policy and a popup-friendly COOP policy).
+- `public/llms.txt` gives AI crawlers a concise product summary, and `public/.well-known/security.txt` provides a disclosure contact.
 
 ## Folder layout
 ```

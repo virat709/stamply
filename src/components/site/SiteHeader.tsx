@@ -16,6 +16,9 @@ export default function SiteHeader() {
           <Link href="/about" className="transition hover:text-[#f0d98c]">
             About
           </Link>
+          <Link href="/pricing" className="transition hover:text-[#f0d98c]">
+            Pricing
+          </Link>
           <Link href="/contact" className="transition hover:text-[#f0d98c]">
             Contact
           </Link>

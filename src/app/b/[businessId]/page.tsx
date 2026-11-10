@@ -8,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
 import { contactSchema, type ContactInput } from "@/lib/schemas";
 import { getBusiness, submitCollect } from "@/lib/db";
-import { Monogram, LoyalkardMark, IconUser, IconWhatsapp, IconSparkle } from "@/components/ui";
+import { BusinessAvatar, LoyalkardMark, IconUser, IconWhatsapp, IconSparkle } from "@/components/ui";
 import type { Business } from "@/lib/types";
 import { detectRestaurantType } from "@/lib/types";
 import { StampIcon } from "@/components/StampGrid";
@@ -152,7 +152,7 @@ function JoinInner() {
               animate={{ rotate: 0, scale: 1 }}
               transition={{ type: "spring", stiffness: 260, damping: 16 }}
             >
-              <Monogram name={business.name} size={56} />
+              <BusinessAvatar name={business.name} logoUrl={business.logoUrl} size={56} />
             </motion.div>
             <div className="min-w-0">
               <p className="text-[10px] tracking-[0.35em] uppercase text-[#d4af37]">Members Club</p>

@@ -177,6 +177,7 @@ export default function LandingPage() {
             <a href="#what" className="hover:text-[#f0d98c] transition">What it is</a>
             <a href="#how" className="hover:text-[#f0d98c] transition">How it works</a>
             <a href="#compare" className="hover:text-[#f0d98c] transition">Why it wins</a>
+            <Link href="/pricing" className="hover:text-[#f0d98c] transition">Pricing</Link>
             <a href="#faq" className="hover:text-[#f0d98c] transition">FAQ</a>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">

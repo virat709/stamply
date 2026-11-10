@@ -15,7 +15,7 @@ import {
 import { loyaltyRuleSchema, profileSchema } from "@/lib/schemas";
 import { whatsappLink } from "@/lib/whatsapp";
 import { currentOwner, signOutOwner } from "@/lib/auth";
-import { CountUp, Skeleton, Toast, IconChart, IconTicket, IconSparkle, Monogram } from "@/components/ui";
+import { CountUp, Skeleton, Toast, IconChart, IconTicket, IconSparkle, BusinessAvatar } from "@/components/ui";
 import { motion, AnimatePresence } from "framer-motion";
 import { z } from "zod";
 import type { Business, BusinessStats, Review, StampCard, StampToken, Customer, RestaurantType, VerificationRequest } from "@/lib/types";
@@ -148,7 +148,7 @@ export default function Dashboard() {
       {/* ── top header ── */}
       <header className="sticky top-0 z-30 flex items-center gap-3 px-4 py-3
                          bg-[#0d0c14]/90 backdrop-blur border-b border-white/[0.06]">
-        <Monogram name={business.name} size={36} />
+        <BusinessAvatar name={business.name} logoUrl={business.logoUrl} size={36} />
         <div className="min-w-0 flex-1">
           <p className="text-[9px] tracking-[0.35em] uppercase text-[#d4af37] leading-none">Owner Console</p>
           <h1 className="mt-0.5 text-base font-extrabold tracking-tight truncate"
@@ -1043,11 +1043,61 @@ const RESTAURANT_TYPES: { type: RestaurantType; label: string; iconLabel: string
   { type: "star", label: "VIP / Star", iconLabel: "⭐" },
 ];
 
+/** Resize an uploaded logo to a small square PNG data URL. Keeping the logo
+ *  in the business record means it works on the public card, the join page and
+ *  generated link-preview images without a separate storage bucket. */
+async function logoFileToDataUrl(file: File): Promise<string> {
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+    throw new Error("Use a PNG, JPG or WebP image.");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("Keep the logo under 5 MB.");
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Could not read that image."));
+      image.src = objectUrl;
+    });
+
+    if (!img.naturalWidth || !img.naturalHeight) {
+      throw new Error("Could not read that image.");
+    }
+
+    const size = 256;
+    const scale = Math.min(size / img.naturalWidth, size / img.naturalHeight);
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not process that image.");
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(
+      img,
+      Math.round((size - width) / 2),
+      Math.round((size - height) / 2),
+      width,
+      height,
+    );
+    return canvas.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: Business) => void }) {
   const p = business.profile ?? {};
   const [selectedType, setSelectedType] = useState<RestaurantType>(
     p.restaurantType ?? detectRestaurantType(business.name, business.loyaltyRule?.rewardDescription)
   );
+  const [logoUrl, setLogoUrl] = useState(business.logoUrl ?? "");
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; kind?: "ok" | "error" } | null>(null);
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<
@@ -1070,13 +1120,33 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
     setValue("communityUrl", p.communityUrl ?? "");
   }, [p.communityUrl, setValue]);
   const orUndef = (s: string | undefined) => (s && s.trim() !== "" ? s : undefined);
+
+  async function handleLogoFile(file?: File) {
+    if (!file) return;
+    setLogoError(null);
+    setLogoBusy(true);
+    try {
+      setLogoUrl(await logoFileToDataUrl(file));
+    } catch (e) {
+      setLogoError((e as Error).message || "Could not process that logo.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
   return (
     <form className={cardCls + " space-y-4"}
       onSubmit={handleSubmit(async (v) => {
         setSaving(true); setToast(null);
         try {
+          const trimmedLogo = logoUrl.trim();
+          const normalizedLogo =
+            trimmedLogo && !/^(https?:\/\/|data:image\/)/i.test(trimmedLogo)
+              ? `https://${trimmedLogo}`
+              : trimmedLogo;
           const updated: Business = {
             ...business,
+            logoUrl: normalizedLogo,
             profile: {
               phone: orUndef(v.phone),
               address: orUndef(v.address),
@@ -1090,8 +1160,9 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
             },
           };
           await saveBusiness(updated);
+          setLogoUrl(normalizedLogo);
           onSaved(updated);
-          setToast({ msg: "Profile and stamp logo saved" });
+          setToast({ msg: "Profile, logo and stamp style saved" });
         } catch (e) {
           setToast({ msg: (e as Error).message || "Could not save profile", kind: "error" });
         } finally { setSaving(false); }
@@ -1129,6 +1200,63 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
             );
           })}
         </div>
+      </div>
+
+      {/* Business logo — shown on the public card, join page and link previews */}
+      <div className="space-y-2 pt-1">
+        <label className="block text-sm font-semibold text-neutral-200">Business logo</label>
+        <p className="text-xs text-neutral-400">
+          Shown on your customer card, join page and shared link previews. A square PNG, JPG or WebP works best.
+        </p>
+        <div className="flex items-center gap-3">
+          <BusinessAvatar name={business.name} logoUrl={logoUrl} size={64} />
+          <div className="flex flex-wrap items-center gap-2">
+            <label
+              className={`cursor-pointer rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-neutral-300 transition hover:bg-white/10 ${
+                logoBusy ? "pointer-events-none opacity-60" : ""
+              }`}
+            >
+              {logoBusy ? "Processing…" : "Upload logo"}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="sr-only"
+                disabled={logoBusy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  void handleLogoFile(file);
+                }}
+              />
+            </label>
+            {logoUrl && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLogoUrl("");
+                  setLogoError(null);
+                }}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-neutral-400 transition hover:bg-white/10"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+        <input
+          value={logoUrl.startsWith("data:") ? "" : logoUrl}
+          onChange={(e) => {
+            setLogoUrl(e.target.value);
+            setLogoError(null);
+          }}
+          placeholder={logoUrl.startsWith("data:") ? "Uploaded logo in use" : "or paste a logo URL (page display only)"}
+          className={`${inputCls} mt-1 text-sm`}
+        />
+        {logoError && <p className="text-xs text-red-400">{logoError}</p>}
+        <p className="text-[11px] text-neutral-500">
+          Uploads are resized to 256×256 and used on your page and link previews. Pasted URLs display on the page;
+          upload the file for the best preview.
+        </p>
       </div>
 
       <label className="block text-sm text-neutral-300">

@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Geist, Geist_Mono, Fraunces } from "next/font/google";
 import {
   SITE_DESCRIPTION,
@@ -90,6 +92,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <div className="aurora" aria-hidden />
         <div className="noise" aria-hidden />
         {children}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

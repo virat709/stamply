@@ -1,0 +1,28 @@
+# Loyalkard
+
+> Loyalkard is digital stamp card software for cafés, restaurants, bakeries and independent retail. Customers scan a counter QR code to join, collect staff-verified stamps in their phone browser, and redeem a reward QR when the card is full. No app download is required for customers.
+
+## Key pages
+
+- Home: https://stamp.v4stay.com/
+- Pricing: https://stamp.v4stay.com/pricing
+- About: https://stamp.v4stay.com/about
+- Security: https://stamp.v4stay.com/security
+- Privacy policy: https://stamp.v4stay.com/privacy
+- Terms of service: https://stamp.v4stay.com/terms
+- Cookie policy: https://stamp.v4stay.com/cookies
+- Contact: https://stamp.v4stay.com/contact
+
+## Product facts
+
+- Built for independent cafés, restaurants, bakeries and retail shops.
+- Counter QR codes rotate every five minutes and are single-use.
+- Returning visits require staff approval, which blocks screenshot and photo reuse.
+- Loyalty mutations are processed server-side.
+- The owner dashboard shows customers, visits, redemptions, reviews and reservations.
+- Customers can leave private feedback and are guided to Google reviews after positive ratings.
+- Loyalkard is a product of V4Stay.
+
+## Contact
+
+support@v4stay.com

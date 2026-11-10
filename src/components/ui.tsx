@@ -53,6 +53,36 @@ export function Monogram({ name, size = 56 }: { name: string; size?: number }) {
   );
 }
 
+/** Business avatar: uploaded/pasted logo with a Monogram fallback. */
+export function BusinessAvatar({
+  name,
+  logoUrl,
+  size = 56,
+  className = "",
+}: {
+  name: string;
+  logoUrl?: string;
+  size?: number;
+  className?: string;
+}) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+
+  if (!logoUrl || failedUrl === logoUrl) return <Monogram name={name} size={size} />;
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={logoUrl}
+      alt={`${name} logo`}
+      width={size}
+      height={size}
+      onError={() => setFailedUrl(logoUrl)}
+      className={`shrink-0 rounded-full bg-white/5 object-cover ${className}`}
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 // ---------- Icons (stroke = currentColor) ----------
 export function IconQr({ size = 20 }: { size?: number }) {
   return (

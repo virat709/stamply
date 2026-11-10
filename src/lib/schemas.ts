@@ -85,7 +85,27 @@ export type ProfileInput = z.infer<typeof profileSchema>;
 export const businessSaveSchema = z.object({
   id: z.string().trim().min(1).max(80),
   name: z.string().trim().min(1, "Enter your restaurant's name.").max(80),
-  logoUrl: z.string().trim().max(500).optional(),
+  // Uploaded logos are stored as small data URLs; pasted URLs are normalized.
+  logoUrl: z.preprocess(
+    (v) => {
+      if (v === undefined || v === null) return "";
+      if (typeof v !== "string") return v;
+      const s = v.trim();
+      if (!s) return "";
+      if (/^data:image\//i.test(s)) return s;
+      return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+    },
+    z
+      .string()
+      .max(400_000, "Logo is too large")
+      .refine(
+        (s) =>
+          s === "" ||
+          /^data:image\/(png|jpeg|webp);base64,/i.test(s) ||
+          /^https?:\/\/\S+\.\S+/.test(s),
+        "Enter a valid image URL"
+      )
+  ),
   loyaltyRule: loyaltyRuleSchema,
   profile: profileSchema.optional(),
 });

@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { getCard, getBusiness, submitReview, getVerificationRequest, claimAfterVerification } from "@/lib/db";
 import { celebrate } from "@/lib/confetti";
 import { downloadQrPng } from "@/lib/qr";
-import { Monogram, IconSparkle } from "@/components/ui";
+import { BusinessAvatar, IconSparkle } from "@/components/ui";
 import type { SubmitReviewResult, VerificationRequest } from "@/lib/types";
 import type { StampCard, Business } from "@/lib/types";
 import { detectRestaurantType } from "@/lib/types";
@@ -254,7 +254,7 @@ function CardInner() {
         className={`w-full max-w-sm lux-card rounded-[30px] p-7 ${unlocked ? "glow-frame" : ""}`}
       >
         <div className="flex items-center gap-4">
-          <Monogram name={business.name} size={54} />
+          <BusinessAvatar name={business.name} logoUrl={business.logoUrl} size={54} />
           <div className="min-w-0">
             <p className="text-[10px] tracking-[0.35em] uppercase text-[#d4af37]">Members Club</p>
             <h1 className="mt-0.5 text-xl font-bold truncate" style={{ fontFamily: "var(--font-display)" }}>
