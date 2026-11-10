@@ -5,15 +5,15 @@ import LegalPage from "@/components/site/LegalPage";
 import { pageMetadata, pageSchema } from "@/lib/seo";
 import { SITE_CONTACT_EMAIL, SITE_OWNER, SITE_PRIVACY_EMAIL } from "@/lib/site";
 
+const contactDescription = `Contact Loyalkard for product support, account help, privacy requests or business onboarding. Email ${SITE_CONTACT_EMAIL}.`;
+
 export const metadata: Metadata = pageMetadata({
   path: "/contact",
   title: "Contact",
-  description:
-    "Contact Loyalkard for product support, account help, privacy requests or business onboarding. Email support@v4stay.com and privacy@v4stay.com.",
+  description: contactDescription,
 });
 
-const description =
-  "Contact Loyalkard for product support, account help, privacy requests or business onboarding. Email support@v4stay.com and privacy@v4stay.com.";
+const description = contactDescription;
 
 export default function ContactPage() {
   return (

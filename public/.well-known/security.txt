@@ -1,4 +1,4 @@
-Contact: mailto:support@v4stay.com
+Contact: mailto:v4services.in@gmail.com
 Expires: 2027-12-31T23:59:59.000Z
 Preferred-Languages: en
 Canonical: https://stamp.v4stay.com/.well-known/security.txt

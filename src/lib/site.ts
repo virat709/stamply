@@ -13,5 +13,5 @@ export const SITE_DESCRIPTION =
 export const SITE_LAST_UPDATED = "2026-11-09";
 export const SITE_LAST_UPDATED_LABEL = "9 November 2026";
 
-export const SITE_CONTACT_EMAIL = "support@v4stay.com";
-export const SITE_PRIVACY_EMAIL = "privacy@v4stay.com";
+export const SITE_CONTACT_EMAIL = "v4services.in@gmail.com";
+export const SITE_PRIVACY_EMAIL = SITE_CONTACT_EMAIL;

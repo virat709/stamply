@@ -15,14 +15,6 @@ const loyalkardLogo = `data:image/png;base64,${readFileSync(
   join(process.cwd(), "public/logo-512.png"),
 ).toString("base64")}`;
 
-function initials(name: string): string {
-  return (name || "L")
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 3).trim()}...` : value;
 }
@@ -54,16 +46,6 @@ export default async function Image({
   );
   const rewardSize = reward.length > 52 ? 44 : reward.length > 34 ? 52 : 60;
 
-  // Uploaded logos are small data URLs, so they can be embedded without a
-  // server-side image fetch. External URLs are skipped for the OG image to
-  // avoid SSR fetch/SSRF issues; the public page still renders them.
-  const uploadedLogo =
-    business?.logoUrl &&
-    business.logoUrl.length <= 250_000 &&
-    /^data:image\/(png|jpeg|webp);base64,/i.test(business.logoUrl)
-      ? business.logoUrl
-      : null;
-
   return new ImageResponse(
     (
       <div
@@ -80,32 +62,13 @@ export default async function Image({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          {uploadedLogo ? (
-            <img
-              src={uploadedLogo}
-              width={96}
-              height={96}
-              alt=""
-              style={{ width: 96, height: 96, borderRadius: 24, objectFit: "cover" }}
-            />
-          ) : (
-            <div
-              style={{
-                width: 96,
-                height: 96,
-                borderRadius: 48,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "linear-gradient(135deg, #f7e7ae, #d4af37)",
-                color: "#211705",
-                fontSize: 34,
-                fontWeight: 700,
-              }}
-            >
-              {initials(name)}
-            </div>
-          )}
+          <img
+            src={loyalkardLogo}
+            width={96}
+            height={96}
+            alt=""
+            style={{ width: 96, height: 96 }}
+          />
           <div style={{ display: "flex", flexDirection: "column" }}>
             <span style={{ fontSize: 17, letterSpacing: 5, color: "#d4af37", textTransform: "uppercase" }}>
               Members Club
@@ -144,10 +107,7 @@ export default async function Image({
           }}
         >
           <span style={{ fontSize: 18, letterSpacing: 3, color: "#737373" }}>stamp.v4stay.com</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <img src={loyalkardLogo} width={40} height={40} alt="" style={{ width: 40, height: 40 }} />
-            <span style={{ fontSize: 17, letterSpacing: 3, color: "#d4af37" }}>POWERED BY LOYALKARD</span>
-          </div>
+          <span style={{ fontSize: 17, letterSpacing: 3, color: "#d4af37" }}>POWERED BY LOYALKARD</span>
         </div>
       </div>
     ),
