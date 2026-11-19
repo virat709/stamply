@@ -3,6 +3,7 @@ import { getStore } from "@/lib/server/select";
 import { requireOwner } from "@/lib/server/store-firestore";
 import { businessSaveSchema, contactLookupSchema } from "@/lib/schemas";
 import { serverError } from "@/lib/server/http";
+import { clientIp, rateLimit } from "@/lib/server/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,18 @@ interface GuardResult {
 
 function signInRequired() {
   return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+}
+
+/** The public demo console is allowed in production, but cap its writes so it
+ *  can't be used as a free Firestore write endpoint. */
+async function demoRateLimit(req: Request, uid: string): Promise<NextResponse | null> {
+  if (uid !== "demo") return null;
+  const limit = await rateLimit(`demo-console:${clientIp(req)}`, 60, 60_000);
+  if (limit.allowed) return null;
+  return NextResponse.json(
+    { error: "Demo console is busy — try again shortly." },
+    { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+  );
 }
 
 /** Owner gateway. Every call must carry a Firebase ID token (Header:
@@ -30,12 +43,9 @@ async function guard(req: Request, businessId?: string): Promise<GuardResult | N
     if (!business) return NextResponse.json({ error: "Business not found." }, { status: 404 });
 
     if (!business.ownerId) {
-      // Ownerless demo business. It is intentionally public in development,
-      // but a production deployment must not expose an unauthenticated console
-      // (mint tokens, redeem rewards, edit the profile) to the world.
-      if (process.env.NODE_ENV === "production" && process.env.LOYALKARD_ALLOW_DEMO_CONSOLE !== "1") {
-        return signInRequired();
-      }
+      // The seeded demo café is deliberately public so the marketing links
+      // work in production too. Other ownerless businesses are not allowed.
+      if (business.id !== "demo-cafe") return signInRequired();
       return { uid: "demo", businessId: business.id };
     }
 
@@ -69,6 +79,8 @@ export async function GET(req: Request) {
       if (!businessId || !code) return NextResponse.json({ token: null });
       const g = await guard(req, businessId);
       if (g instanceof NextResponse) return g;
+      const demoLimitedGet = await demoRateLimit(req, g.uid);
+      if (demoLimitedGet) return demoLimitedGet;
       const token = await getStore().getToken(g.businessId ?? businessId, code.slice(0, 32));
       return NextResponse.json({ token });
     }
@@ -76,11 +88,15 @@ export async function GET(req: Request) {
     if (kind === "businesses") {
       const g = await guard(req);
       if (g instanceof NextResponse) return g;
+      const demoLimitedGet = await demoRateLimit(req, g.uid);
+      if (demoLimitedGet) return demoLimitedGet;
       const businesses = await getStore().listBusinessesByOwner(g.uid);
       return NextResponse.json({ businesses });
     }
     const g = businessId ? await guard(req, businessId) : NextResponse.json({ error: "businessId required." }, { status: 400 });
     if (g instanceof NextResponse) return g;
+    const demoLimited = await demoRateLimit(req, g.uid);
+    if (demoLimited) return demoLimited;
     const bId = g.businessId ?? businessId!;
     const store = getStore();
 
@@ -126,6 +142,8 @@ export async function POST(req: Request) {
 
     const g = effectiveBusinessId ? await guard(req, effectiveBusinessId) : await guard(req);
     if (g instanceof NextResponse) return g;
+    const demoLimited = await demoRateLimit(req, g.uid);
+    if (demoLimited) return demoLimited;
     const { uid } = g;
     // Always operate on the canonical business id from the database, never on
     // the casing the browser happened to send.

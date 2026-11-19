@@ -1,3 +1,4 @@
+import { storeConfigMessage } from "./config";
 import { ConfigurationError } from "./http";
 import { hasFirestore, firestoreStore } from "./store-firestore";
 import { fileStore } from "./store-file";
@@ -13,9 +14,7 @@ import type { Store } from "./store";
 export function getStore(): Store {
   if (hasFirestore()) return firestoreStore;
   if (process.env.NODE_ENV === "production" && process.env.LOYALKARD_ALLOW_FILE_STORE !== "1") {
-    throw new ConfigurationError(
-      "Server data store is not configured. Add FIREBASE_ADMIN_CLIENT_EMAIL and FIREBASE_ADMIN_PRIVATE_KEY (and NEXT_PUBLIC_FIREBASE_PROJECT_ID) to the deployment environment, or set LOYALKARD_ALLOW_FILE_STORE=1 for a single-instance self-host."
-    );
+    throw new ConfigurationError(storeConfigMessage());
   }
   return fileStore;
 }
