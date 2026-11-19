@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { Business, BusinessStats, Customer, Review, StampCard, StampToken, VerificationRequest } from "@/lib/types";
 import { autoFeedback } from "@/lib/review-feedback";
+import { adminCredentials, firebasePrivateKey } from "./config";
 import {
   businessKey, cardIdFor, customerIdForPhone, newStampCode, normalizePhone, safeDecode,
   stampGuard, tokenDocId, TOKEN_TTL_MS, VERIFICATION_TTL_MS, type Store,
@@ -17,9 +18,10 @@ import {
 // Google's PUBLIC JWKs — signature, issuer and audience all checked, and no
 // service account is needed for verification (killer for local dev too).
 
-const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n");
+const credentials = adminCredentials();
+const projectId = credentials.projectId;
+const clientEmail = credentials.clientEmail;
+const privateKey = firebasePrivateKey(credentials.privateKey);
 
 let fsDb: Firestore | null = null;
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
