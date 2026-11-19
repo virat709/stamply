@@ -75,7 +75,7 @@ export default function Onboarding() {
               <Monogram name={name || "V"} size={62} />
               <div>
                 <p className="font-semibold text-lg">{name.trim() || "Your restaurant"}</p>
-                <p className="text-xs text-neutral-500">10-stamp card · 10th drink free</p>
+                <p className="text-xs text-neutral-400">10-stamp card · 10th drink free</p>
               </div>
             </div>
 
@@ -104,7 +104,7 @@ export default function Onboarding() {
                 )}
               </button>
             </form>
-            <div className="mt-5 flex items-center justify-between text-xs text-neutral-500 relative z-30">
+            <div className="mt-5 flex items-center justify-between text-xs text-neutral-400 relative z-30">
               <Link href="/" className="hover:text-neutral-300">← Back home</Link>
               <button
                 type="button"
@@ -119,7 +119,7 @@ export default function Onboarding() {
             </div>
           </div>
         </div>
-        <p className="mt-5 text-center text-[11px] tracking-widest uppercase text-neutral-600">your account is already secured — this step just names the venue</p>
+        <p className="mt-5 text-center text-[11px] tracking-widest uppercase text-neutral-400">your account is already secured — this step just names the venue</p>
       </motion.div>
       <Toast toast={toast} onDone={() => setToast(null)} />
     </main>

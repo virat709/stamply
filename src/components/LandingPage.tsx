@@ -97,7 +97,7 @@ function HeroCardMock() {
 
         <div className="mt-3 flex items-baseline gap-2">
           <span className="text-3xl font-extrabold text-gold-grad">7</span>
-          <span className="text-sm text-neutral-500">/ 10 stamps</span>
+          <span className="text-sm text-neutral-400">/ 10 stamps</span>
         </div>
         <div className="mt-2 h-1.5 w-full rounded-full bg-white/10 overflow-hidden bar-shimmer">
           <motion.div
@@ -225,7 +225,7 @@ export default function LandingPage() {
 
             <motion.p
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.46 }}
-              className="mt-3 text-xs text-neutral-500"
+              className="mt-3 text-xs text-neutral-400"
             >
               Published by{" "}
               <a href="https://v4stay.com" target="_blank" rel="noopener noreferrer" className="text-[#f0d98c] underline underline-offset-4 hover:text-white">
@@ -258,7 +258,7 @@ export default function LandingPage() {
               ].map(([v, l]) => (
                 <div key={l} className="px-5 first:pl-0">
                   <dt className="text-2xl font-extrabold text-gold-grad">{v}</dt>
-                  <dd className="mt-1 text-xs text-neutral-500">{l}</dd>
+                  <dd className="mt-1 text-xs text-neutral-400">{l}</dd>
                 </div>
               ))}
             </motion.dl>
@@ -272,7 +272,7 @@ export default function LandingPage() {
         <div className="marquee-track">
           {[...FEATURED, ...FEATURED].map((name, i) => (
             <span key={i} className="flex items-center gap-14 whitespace-nowrap">
-              <span className="text-lg font-semibold text-neutral-500 tracking-wide" style={{ fontFamily: "var(--font-display)" }}>{name}</span>
+              <span className="text-lg font-semibold text-neutral-400 tracking-wide" style={{ fontFamily: "var(--font-display)" }}>{name}</span>
               <span className="w-1 h-1 rounded-full bg-[#d4af37]/60" />
             </span>
           ))}
@@ -528,7 +528,7 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-          <p className="mt-8 text-center text-sm text-neutral-500">
+          <p className="mt-8 text-center text-sm text-neutral-400">
             Read the <Link href="/privacy" className="text-[#f0d98c] underline underline-offset-4 hover:text-white">privacy policy</Link>,{" "}
             <Link href="/terms" className="text-[#f0d98c] underline underline-offset-4 hover:text-white">terms of service</Link>,{" "}
             <Link href="/cookies" className="text-[#f0d98c] underline underline-offset-4 hover:text-white">cookie policy</Link>,{" "}
@@ -576,7 +576,7 @@ export default function LandingPage() {
             ))}
           </div>
 
-          <div className="mt-10 rounded-2xl border border-white/10 p-6 text-sm leading-relaxed text-neutral-500">
+          <div className="mt-10 rounded-2xl border border-white/10 p-6 text-sm leading-relaxed text-neutral-400">
             <p className="font-semibold text-neutral-300">Sources and further reading</p>
             <ul className="mt-3 space-y-2">
               <li>

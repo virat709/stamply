@@ -175,14 +175,14 @@ export default function Login() {
                 <span className="glass rounded-xl w-10 h-10 grid place-items-center text-[#f0d98c] shrink-0">{f.icon}</span>
                 <div>
                   <p className="font-semibold">{f.title}</p>
-                  <p className="text-sm text-neutral-500">{f.body}</p>
+                  <p className="text-sm text-neutral-400">{f.body}</p>
                 </div>
               </motion.div>
             ))}
           </div>
         </div>
 
-        <p className="relative text-[11px] tracking-widest uppercase text-neutral-600">
+        <p className="relative text-[11px] tracking-widest uppercase text-neutral-400">
           {isFirebaseConfigured ? "Secured by Firebase Auth" : "Demo mode · accounts saved locally · add Firebase keys to go live"}
         </p>
       </div>
@@ -226,7 +226,7 @@ export default function Login() {
                 <div>
                   <label className={labelCls} htmlFor="forgot-email">Your email</label>
                   <div className="mt-1.5 relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconMail size={17} /></span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400"><IconMail size={17} /></span>
                     <input
                       id="forgot-email"
                       type="email"
@@ -298,7 +298,7 @@ export default function Login() {
                       >
                         <label className={labelCls} htmlFor="auth-restaurant">Restaurant name</label>
                         <div className="mt-1.5 relative">
-                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-[15px]">🏪</span>
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 text-[15px]">🏪</span>
                           <input
                             id="auth-restaurant"
                             value={restaurantName}
@@ -315,7 +315,7 @@ export default function Login() {
                   <div>
                     <label className={labelCls} htmlFor="auth-email">Email</label>
                     <div className="mt-1.5 relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconMail size={17} /></span>
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400"><IconMail size={17} /></span>
                       <input
                         id="auth-email"
                         type="email"
@@ -330,15 +330,15 @@ export default function Login() {
                   <div>
                     <label className={labelCls} htmlFor="auth-password">Password</label>
                     <div className="mt-1.5 relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 text-[15px]">🔑</span>
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 text-[15px]">🔑</span>
                       <input
                         id="auth-password"
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="At least 6 characters"
+                        placeholder="At least 8 characters"
                         required
-                        minLength={6}
+                        minLength={8}
                         className={inputCls}
                       />
                     </div>
@@ -392,7 +392,7 @@ export default function Login() {
                       : (mode === "signup" ? "Create my restaurant →" : "Sign in →")}
                   </button>
 
-                  <p className="text-xs text-neutral-500 text-center leading-relaxed">
+                  <p className="text-xs text-neutral-400 text-center leading-relaxed">
                     {mode === "signup"
                       ? "One account per restaurant — your customers only see your brand."
                       : "New here? Switch to “Create account” — it sets up your whole console."}
@@ -401,7 +401,7 @@ export default function Login() {
 
                 {isFirebaseConfigured && (
                   <>
-                    <div className="mt-5 flex items-center gap-3 text-[10px] tracking-[0.25em] uppercase text-neutral-600">
+                    <div className="mt-5 flex items-center gap-3 text-[10px] tracking-[0.25em] uppercase text-neutral-400">
                       <span className="h-px flex-1 bg-white/10" />
                       or
                       <span className="h-px flex-1 bg-white/10" />
@@ -415,7 +415,7 @@ export default function Login() {
                       <GoogleG />
                       {googleBusy ? "Opening Google…" : "Continue with Google"}
                     </button>
-                    <p className="mt-2.5 text-xs text-neutral-500 text-center">
+                    <p className="mt-2.5 text-xs text-neutral-400 text-center">
                       Gmail or Google Workspace — first time? You&apos;ll name your restaurant right after.
                     </p>
                   </>
@@ -425,13 +425,13 @@ export default function Login() {
             </div>
           </div>
 
-          <p className="mt-6 text-center text-sm text-neutral-500">
+          <p className="mt-6 text-center text-sm text-neutral-400">
             Just exploring?{" "}
             <Link href="/dashboard/demo-cafe" className="text-[#d4af37] hover:text-[#f0d98c] font-semibold">
               Try the demo console →
             </Link>
           </p>
-          <p className="mt-3 text-center text-[11px] text-neutral-600">
+          <p className="mt-3 text-center text-[11px] text-neutral-400">
             <Link href="/privacy" className="hover:text-[#f0d98c] transition">Privacy</Link>
             {" · "}
             <Link href="/terms" className="hover:text-[#f0d98c] transition">Terms</Link>

@@ -52,11 +52,11 @@ export default function SiteFooter() {
                 Loyalkard<span className="text-[#d4af37]">.</span>
               </span>
             </Link>
-            <p className="mt-4 max-w-xs text-sm leading-relaxed text-neutral-500">
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-neutral-400">
               Digital stamp cards for cafés, restaurants, bakeries and retail. One scan to join, no app download, and
               staff-verified stamps.
             </p>
-            <p className="mt-4 text-xs text-neutral-600">
+            <p className="mt-4 text-xs text-neutral-400">
               Loyalkard is loyalty software by{" "}
               <a
                 href={SITE_OWNER_URL}
@@ -68,7 +68,7 @@ export default function SiteFooter() {
               </a>
               .
             </p>
-            <p className="mt-1 text-xs text-neutral-600">Last updated: {SITE_LAST_UPDATED_LABEL}</p>
+            <p className="mt-1 text-xs text-neutral-400">Last updated: {SITE_LAST_UPDATED_LABEL}</p>
           </div>
 
           {columns.map((column) => (
@@ -76,7 +76,7 @@ export default function SiteFooter() {
               <h2 className="text-[11px] font-semibold uppercase tracking-[0.25em] text-neutral-300">
                 {column.title}
               </h2>
-              <ul className="mt-4 space-y-2.5 text-sm text-neutral-500">
+              <ul className="mt-4 space-y-2.5 text-sm text-neutral-400">
                 {column.links.map((link) =>
                   "external" in link && link.external ? (
                     <li key={link.label}>
@@ -102,7 +102,7 @@ export default function SiteFooter() {
           ))}
         </div>
 
-        <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 text-xs text-neutral-600 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-6 text-xs text-neutral-400 sm:flex-row sm:items-center sm:justify-between">
           <p>
             © 2026 {SITE_OWNER}. All rights reserved. Loyalkard is a {SITE_OWNER} product.
           </p>

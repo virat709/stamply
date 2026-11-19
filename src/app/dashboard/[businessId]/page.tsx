@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { useForm } from "react-hook-form";
-import { downloadQrPng, downloadQrSvg } from "@/lib/qr";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { QrDownloadButtons } from "@/components/QrDownloadButtons";
+import { escapeCsvField } from "@/lib/csv";
 import {
   getBusiness, saveBusiness, addStampByContact, redeemReward,
   createStampToken, getStampToken, getBusinessStats, lookupCard,
   listReviews, listVerificationRequests, approveVerificationRequest,
+  getOwnerBusinesses,
 } from "@/lib/db";
 import { loyaltyRuleSchema, profileSchema } from "@/lib/schemas";
 import { whatsappLink } from "@/lib/whatsapp";
@@ -36,49 +38,6 @@ const NAV: { t: Tab; label: string; emoji: string }[] = [
   { t: "overview", label: "Overview", emoji: "📊" },
   { t: "settings", label: "Settings", emoji: "⚙️" },
 ];
-
-// ─── QR download helper (shared) ─────────────────────────────────────────────
-export function QrDownloadButtons({ svg, filenameBase, onDone }: {
-  svg: SVGSVGElement | null;
-  filenameBase: string;
-  onDone: (msg: string, kind?: "ok" | "error") => void;
-}) {
-  function resolveSvg(): SVGSVGElement | null {
-    return svg;
-  }
-  async function png() {
-    const el = resolveSvg();
-    if (!el) { onDone("QR not ready yet — try again in a moment.", "error"); return; }
-    try {
-      await downloadQrPng(el, `${filenameBase}.png`);
-      onDone("QR saved as PNG");
-    } catch (e) {
-      onDone((e as Error).message || "Download failed", "error");
-    }
-  }
-  function svgdl() {
-    const el = resolveSvg();
-    if (!el) { onDone("QR not ready yet — try again in a moment.", "error"); return; }
-    try {
-      downloadQrSvg(el, `${filenameBase}.svg`);
-      onDone("QR saved as SVG");
-    } catch {
-      onDone("Download failed", "error");
-    }
-  }
-  return (
-    <div className="flex gap-2 justify-center mt-3">
-      <button type="button" onClick={png}
-        className="btn-ghost rounded-full px-4 py-2 text-xs font-semibold active:scale-[0.96] transition-transform touch-manipulation cursor-pointer select-none">
-        ⬇ PNG
-      </button>
-      <button type="button" onClick={svgdl}
-        className="btn-ghost rounded-full px-4 py-2 text-xs font-semibold active:scale-[0.96] transition-transform touch-manipulation cursor-pointer select-none">
-        ⬇ SVG
-      </button>
-    </div>
-  );
-}
 
 // ─── Root dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
@@ -106,7 +65,20 @@ export default function Dashboard() {
       const owner = await currentOwner();
       if (!alive) return;
       setOwnerUid(owner);
-      if (business.ownerId && owner !== business.ownerId) setDenied(true);
+      // The public API withholds ownerId unless the requester is the owner, so
+      // anonymous/other-owner visitors must be checked against the owned list.
+      if (!business.hasOwner && !business.ownerId) return; // ownerless demo business
+      if (!owner) { setDenied(true); return; }
+      if (business.ownerId) {
+        if (owner !== business.ownerId) setDenied(true);
+        return;
+      }
+      try {
+        const owned = await getOwnerBusinesses(owner);
+        if (!owned.some((b) => b.id === business.id)) setDenied(true);
+      } catch {
+        setDenied(true);
+      }
     })();
     return () => { alive = false; };
   }, [business]);
@@ -120,7 +92,7 @@ export default function Dashboard() {
   // ── error states ──
   if (notFound) return (
     <main className="p-8 text-center">
-      <p className="text-neutral-500">Business not found.</p>
+      <p className="text-neutral-400">Business not found.</p>
       <Link href="/" className="mt-3 inline-block text-sm text-[#d4af37] hover:underline">← Back home</Link>
     </main>
   );
@@ -136,11 +108,11 @@ export default function Dashboard() {
           className="btn-gold mt-6 rounded-full px-6 py-3 font-bold w-full">
           Sign in to my console
         </button>
-        <Link href="/" className="mt-4 inline-block text-sm text-neutral-500 hover:text-neutral-300">← Back home</Link>
+        <Link href="/" className="mt-4 inline-block text-sm text-neutral-400 hover:text-neutral-300">← Back home</Link>
       </div>
     </main>
   );
-  if (!business) return <main className="p-8 text-center text-neutral-500">Loading your console…</main>;
+  if (!business) return <main className="p-8 text-center text-neutral-400">Loading your console…</main>;
 
   return (
     // pb-20 leaves room for the fixed bottom nav bar
@@ -199,7 +171,7 @@ export default function Dashboard() {
             onClick={() => setTab(t)}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-3
                         text-[10px] font-semibold tracking-wide transition-colors
-                        active:scale-95 ${tab === t ? "text-[#d4af37]" : "text-neutral-500"}`}
+                        active:scale-95 ${tab === t ? "text-[#d4af37]" : "text-neutral-400"}`}
           >
             <span className="text-xl leading-none">{emoji}</span>
             {label}
@@ -253,12 +225,17 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
     return () => clearTimeout(id);
   }, [generate]);
 
-  // Polling for token usage (detect when a customer scans and collects the stamp)
+  // Poll for token usage (detect when a customer scans and collects a stamp).
+  // Slower while the tab is hidden, and never rotate a code the cashier isn't
+  // looking at — that only creates codes that can expire unseen.
   const tokenCode = token?.code;
   const tokenUsed = !!token?.used;
+  const tokenInactive = tokenUsed || !!token?.invalidated;
   useEffect(() => {
-    if (!tokenCode || tokenUsed) return;
-    const t = setInterval(async () => {
+    if (!tokenCode || tokenInactive) return;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped || document.visibilityState === "hidden") return;
       try {
         const fresh = await getStampToken(businessId, tokenCode);
         if (fresh?.used) {
@@ -268,6 +245,9 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
           setTimeout(() => {
             void generate();
           }, 800);
+        } else if (fresh?.invalidated) {
+          setToken({ ...fresh });
+          setToast({ msg: "Code refreshed — this one was retired." });
         } else if (fresh && +new Date(fresh.expiresAt) <= Date.now()) {
           // A counter code is only valid for five minutes. Rotate it before a
           // customer scans a dead QR.
@@ -277,9 +257,13 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
       } catch {
         /* ignore network poll glitches */
       }
-    }, 1200);
-    return () => clearInterval(t);
-  }, [businessId, tokenCode, tokenUsed, generate]);
+    };
+    const t = setInterval(tick, 3_000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [businessId, tokenCode, tokenInactive, generate]);
 
   const qrUrl = token?.code ? `${origin || ""}/b/${businessId}?collect=${token.code}` : "";
 
@@ -313,7 +297,7 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
         </div>
       ) : (
         <>
-          <div className={`bg-white rounded-2xl p-4 transition-all duration-300 ${tokenUsed ? "opacity-35 grayscale scale-95" : "pulse-ring"}`}>
+          <div className={`bg-white rounded-2xl p-4 transition-all duration-300 ${tokenInactive ? "opacity-35 grayscale scale-95" : "pulse-ring"}`}>
             <QRCodeSVG
               ref={setCounterQrEl}
               value={qrUrl}
@@ -322,15 +306,21 @@ function CounterQrCard({ businessId, size = 220, prominent = false }: {
           </div>
 
           <p className={`mt-4 font-mono text-2xl tracking-[0.35em] font-bold
-                         ${tokenUsed ? "text-neutral-600 line-through" : "text-[#f0d98c]"}`}>
+                         ${tokenInactive ? "text-neutral-400 line-through" : "text-[#f0d98c]"}`}>
             {token.code}
           </p>
 
-          {tokenUsed ? (
+          {tokenInactive ? (
             <div className="mt-2.5 space-y-2">
-              <p className="text-sm text-emerald-300 font-semibold flex items-center justify-center gap-1.5">
-                <span>✓</span> Stamp collected by customer!
-              </p>
+              {tokenUsed ? (
+                <p className="text-sm text-emerald-300 font-semibold flex items-center justify-center gap-1.5">
+                  <span>✓</span> Stamp collected by customer!
+                </p>
+              ) : (
+                <p className="text-sm text-neutral-300 font-semibold flex items-center justify-center gap-1.5">
+                  <span>↻</span> Code refreshed — no stamp was collected.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={generate}
@@ -521,7 +511,7 @@ function CommunityQrCard({ business, onSaved }: { business: Business; onSaved: (
             filenameBase={`loyalkard-community-qr-${business.id}`}
             onDone={(m, k) => setToast({ msg: m, kind: k })}
           />
-          <p className="text-[10px] text-neutral-500 mt-2">Print for table tents or entrance posters</p>
+          <p className="text-[10px] text-neutral-400 mt-2">Print for table tents or entrance posters</p>
         </div>
       )}
 
@@ -603,7 +593,7 @@ function CustomerCardItem({ customer, requiredStamps }: { customer: Customer; re
           </div>
           <p className="text-xs text-neutral-400 mt-0.5">{customer.phoneNumber || customer.email || "No contact"}</p>
         </div>
-        <span className="text-[11px] text-neutral-500 shrink-0">
+        <span className="text-[11px] text-neutral-400 shrink-0">
           Last: {new Date(customer.lastVisitedAt).toLocaleDateString()}
         </span>
       </div>
@@ -641,12 +631,12 @@ function CustomerCardItem({ customer, requiredStamps }: { customer: Customer; re
               exit={{ opacity: 0, height: 0 }}
               className="mt-2.5 rounded-xl bg-white/[0.03] border border-white/10 p-3 overflow-hidden text-xs space-y-2"
             >
-              <div className="flex justify-between text-[10px] uppercase tracking-wider text-neutral-500 pb-1 border-b border-white/10">
+              <div className="flex justify-between text-[10px] uppercase tracking-wider text-neutral-400 pb-1 border-b border-white/10">
                 <span>Member since {new Date(customer.createdAt).toLocaleDateString()}</span>
                 <span>{history.length} events</span>
               </div>
               {history.length === 0 ? (
-                <p className="text-neutral-500 py-1">
+                <p className="text-neutral-400 py-1">
                   Active card has {curStamps} stamps ({totalStamps} lifetime stamps earned).
                 </p>
               ) : (
@@ -656,7 +646,7 @@ function CustomerCardItem({ customer, requiredStamps }: { customer: Customer; re
                       <span className={h.type === "reward_redeemed" ? "text-emerald-300 font-medium" : "text-neutral-200"}>
                         {h.type === "reward_redeemed" ? "🎁 Free Reward Redeemed" : "⭐ +1 Stamp Collected"}
                       </span>
-                      <span className="text-neutral-500 text-[11px] shrink-0">
+                      <span className="text-neutral-400 text-[11px] shrink-0">
                         {new Date(h.timestamp).toLocaleString(undefined, {
                           month: "short",
                           day: "numeric",
@@ -708,18 +698,18 @@ function Overview({ stats, business }: { stats: BusinessStats | null; business: 
                 "id,name,phone,email,currentStamps,totalStamps,totalRedemptions,createdAt,lastVisitedAt",
                 ...stats.customers.map((c) =>
                   [
-                    c.id,
-                    `"${(c.name ?? "").replace(/"/g, '""')}"`,
-                    c.phoneNumber ?? "",
-                    c.email ?? "",
-                    c.currentStamps ?? 0,
-                    c.totalStamps ?? (c.currentStamps ?? 0),
-                    c.totalRedemptions ?? 0,
-                    c.createdAt,
-                    c.lastVisitedAt,
+                    escapeCsvField(c.id),
+                    escapeCsvField(c.name ?? ""),
+                    escapeCsvField(c.phoneNumber ?? ""),
+                    escapeCsvField(c.email ?? ""),
+                    escapeCsvField(c.currentStamps ?? 0),
+                    escapeCsvField(c.totalStamps ?? (c.currentStamps ?? 0)),
+                    escapeCsvField(c.totalRedemptions ?? 0),
+                    escapeCsvField(c.createdAt),
+                    escapeCsvField(c.lastVisitedAt),
                   ].join(",")
                 ),
-              ].join("\n");
+              ].join("\r\n");
               const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
               const a = document.createElement("a");
               a.href = url;
@@ -743,7 +733,7 @@ function Overview({ stats, business }: { stats: BusinessStats | null; business: 
               </li>
             ))
           ) : stats.customers.length === 0 ? (
-            <li className="py-6 text-center text-neutral-500 text-sm">
+            <li className="py-6 text-center text-neutral-400 text-sm">
               No customers yet — the first stamp brings their profile and stamp count here.
             </li>
           ) : (
@@ -832,7 +822,7 @@ function RedeemPanel({ businessId }: { businessId: string }) {
           {checking ? "Checking…" : "Check card"}
         </button>
 
-        <div className="my-4 flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-neutral-600">
+        <div className="my-4 flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-neutral-400">
           <span className="h-px flex-1 bg-white/10" /> or by phone / email <span className="h-px flex-1 bg-white/10" />
         </div>
 
@@ -894,7 +884,9 @@ function VerifyPanel({ businessId }: { businessId: string }) {
 
   useEffect(() => {
     const first = setTimeout(() => { void load(); }, 0);
-    const t = setInterval(() => { void load(); }, 4_000);
+    const t = setInterval(() => {
+      if (document.visibilityState !== "hidden") void load();
+    }, 5_000);
     return () => {
       clearTimeout(first);
       clearInterval(t);
@@ -942,7 +934,7 @@ function VerifyPanel({ businessId }: { businessId: string }) {
         <div className={cardCls + " text-center py-8"}>
           <div className="text-3xl">🪑</div>
           <p className="mt-2 font-semibold">No customers waiting</p>
-          <p className="mt-1 text-sm text-neutral-500">New approval requests appear here automatically.</p>
+          <p className="mt-1 text-sm text-neutral-400">New approval requests appear here automatically.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -951,7 +943,7 @@ function VerifyPanel({ businessId }: { businessId: string }) {
               <div className="min-w-0 flex-1">
                 <p className="font-bold truncate">{r.name || "Walk-in customer"}</p>
                 <p className="text-sm text-neutral-400 truncate">{r.phone}</p>
-                <p className="mt-1 text-[11px] text-neutral-500">
+                <p className="mt-1 text-[11px] text-neutral-400">
                   Requested {new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
@@ -1253,7 +1245,7 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
           className={`${inputCls} mt-1 text-sm`}
         />
         {logoError && <p className="text-xs text-red-400">{logoError}</p>}
-        <p className="text-[11px] text-neutral-500">
+        <p className="text-[11px] text-neutral-400">
           Uploads are resized to 256×256 and used on your page and link previews. Pasted URLs display on the page;
           upload the file for the best preview.
         </p>
@@ -1266,7 +1258,7 @@ function ProfileForm({ business, onSaved }: { business: Business; onSaved: (b: B
           placeholder="https://chat.whatsapp.com/... or https://instagram.com/..."
           className={`${inputCls} mt-1`}
         />
-        <span className="text-[11px] text-neutral-500 mt-1 block">
+        <span className="text-[11px] text-neutral-400 mt-1 block">
           Generates the &ldquo;Join in our Community&rdquo; QR code and button.
         </span>
       </label>
@@ -1311,7 +1303,7 @@ function Stars({ value }: { value: number }) {
   return (
     <span aria-label={`${value} out of 5 stars`}>
       <span className="text-[#d4af37]">{"★".repeat(value)}</span>
-      <span className="text-neutral-600">{"★".repeat(5 - value)}</span>
+      <span className="text-neutral-400">{"★".repeat(5 - value)}</span>
     </span>
   );
 }
@@ -1335,14 +1327,14 @@ function ReviewsPanel({ businessId }: { businessId: string }) {
         {average !== null && (
           <div className="text-right">
             <Stars value={Math.round(average)} />
-            <p className="text-xs text-neutral-500">{average}/5 · {reviews!.length} review{reviews!.length === 1 ? "" : "s"}</p>
+            <p className="text-xs text-neutral-400">{average}/5 · {reviews!.length} review{reviews!.length === 1 ? "" : "s"}</p>
           </div>
         )}
       </div>
       {reviews === null ? (
-        <p className="mt-4 text-sm text-neutral-500">Loading…</p>
+        <p className="mt-4 text-sm text-neutral-400">Loading…</p>
       ) : reviews.length === 0 ? (
-        <p className="mt-4 text-sm text-neutral-500">No reviews yet. Customers leave them from their stamp card.</p>
+        <p className="mt-4 text-sm text-neutral-400">No reviews yet. Customers leave them from their stamp card.</p>
       ) : (
         <ul className="mt-4 divide-y divide-white/5 text-sm max-h-72 overflow-auto">
           {reviews.map((r) => (
@@ -1350,11 +1342,11 @@ function ReviewsPanel({ businessId }: { businessId: string }) {
               <div className="flex justify-between items-start gap-3">
                 <div className="min-w-0">
                   <Stars value={r.rating} />
-                  <p className="text-xs text-neutral-500 mt-0.5">
+                  <p className="text-xs text-neutral-400 mt-0.5">
                     {[r.customerName, r.customerContact].filter(Boolean).join(" · ") || "Guest"} · {new Date(r.createdAt).toLocaleDateString()}
                   </p>
                 </div>
-                <span className="text-[10px] uppercase tracking-widest text-neutral-600 shrink-0 mt-1">auto-reply ✓</span>
+                <span className="text-[10px] uppercase tracking-widest text-neutral-400 shrink-0 mt-1">auto-reply ✓</span>
               </div>
               {r.comment && <p className="mt-2 text-neutral-200">&ldquo;{r.comment}&rdquo;</p>}
               <p className="mt-1.5 text-xs text-[#f0d98c]">↩︎ {r.autoReply}</p>

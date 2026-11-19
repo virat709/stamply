@@ -47,7 +47,18 @@ function JoinInner() {
     (async () => {
       try {
         const raw = localStorage.getItem(`currentCustomer_${params.businessId}`);
-        if (raw && !cancelled) setSavedContact(JSON.parse(raw));
+        if (!raw || cancelled) return;
+        const parsed = JSON.parse(raw) as { name?: string; phone?: string; savedAt?: number } | null;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+        // Contact data is personal information; don't keep it on the device
+        // forever. Older records without a timestamp are treated as expired.
+        const savedAt = Number(parsed.savedAt);
+        const maxAge = 90 * 24 * 60 * 60 * 1000;
+        if (!Number.isFinite(savedAt) || Date.now() - savedAt > maxAge) {
+          localStorage.removeItem(`currentCustomer_${params.businessId}`);
+          return;
+        }
+        if (!cancelled) setSavedContact({ name: parsed.name, phone: parsed.phone });
       } catch {
         /* unreadable/absent record — plain form */
       }
@@ -94,8 +105,10 @@ function JoinInner() {
           cardId: res.cardId,
           name: values.name,
           phone: values.phoneNumber || "",
+          savedAt: new Date().getTime(),
         });
-        const bKey = params.businessId ? decodeURIComponent(params.businessId) : "";
+        let bKey = params.businessId ?? "";
+        try { bKey = decodeURIComponent(bKey); } catch { /* keep raw */ }
         if (bKey) {
           localStorage.setItem(`currentCustomer_${bKey}`, payload);
           localStorage.setItem(`currentCustomer_${bKey.toLowerCase()}`, payload);
@@ -107,12 +120,14 @@ function JoinInner() {
       } catch {
         /* private mode — the flow still works via cookies */
       }
+      const suffix = res.error ? `?notice=${encodeURIComponent(res.error)}` : "";
       if (res.status === "pending_verification" && res.verificationId) {
-        router.push(`/card/${res.cardId}?verify=${res.verificationId}`);
+        router.push(`/card/${res.cardId}?verify=${res.verificationId}${res.error ? `&notice=${encodeURIComponent(res.error)}` : ""}`);
         return;
       }
-      router.push(`/card/${res.cardId}`);
-      if (res.error) setError(res.error); // stamp failed (expired code) — card still shown
+      // Carry any stamp failure to the card page as a notice — setting it here
+      // would be lost the moment navigation completes.
+      router.push(`/card/${res.cardId}${suffix}`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -123,11 +138,11 @@ function JoinInner() {
   if (notFound)
     return (
       <main className="p-8 text-center">
-        <p className="text-neutral-500">This loyalty program doesn&apos;t exist.</p>
+        <p className="text-neutral-400">This loyalty program doesn&apos;t exist.</p>
         <Link href="/" className="mt-3 inline-block text-sm text-[#d4af37] hover:underline">← Back home</Link>
       </main>
     );
-  if (!business) return <main className="p-8 text-center text-neutral-500">Loading…</main>;
+  if (!business) return <main className="p-8 text-center text-neutral-400">Loading…</main>;
 
   return (
     <main className="flex-1 flex items-center justify-center px-4 py-16">
@@ -186,10 +201,11 @@ function JoinInner() {
             <div>
               <label className="label-lux cursor-pointer" htmlFor="join-name">Your name</label>
               <div className={`mt-1.5 relative ${errors.name ? "animate-[shake_0.4s]" : ""}`}>
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconUser size={17} /></span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400"><IconUser size={17} /></span>
                 <input
                   id="join-name"
                   {...register("name")}
+                  autoComplete="name"
                   placeholder="Jane Doe"
                   className="input-lux w-full rounded-xl pl-11 pr-4 py-3.5 text-base touch-manipulation relative z-20 cursor-text"
                 />
@@ -198,7 +214,7 @@ function JoinInner() {
             <div>
               <label className="label-lux cursor-pointer" htmlFor="join-phone">WhatsApp / Phone number (10 digits)</label>
               <div className="mt-1.5 relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"><IconWhatsapp size={17} /></span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400"><IconWhatsapp size={17} /></span>
                 <input
                   id="join-phone"
                   {...register("phoneNumber")}
@@ -213,7 +229,7 @@ function JoinInner() {
             </div>
             <div className="text-center flex items-center gap-3">
               <span className="flex-1 gold-line" />
-              <span className="text-[10px] tracking-[0.3em] text-neutral-600">phone number is your membership id</span>
+              <span className="text-[10px] tracking-[0.3em] text-neutral-400">phone number is your membership id</span>
               <span className="flex-1 gold-line" />
             </div>
 
@@ -243,13 +259,13 @@ function JoinInner() {
                 </>
               )}
             </button>
-            <p className="text-xs text-neutral-500 text-center leading-relaxed">
+            <p className="text-xs text-neutral-400 text-center leading-relaxed">
               Enter your 10-digit number to instantly receive your stamp and access your rewards card.
             </p>
           </form>
         </div>
 
-        <div className="mt-6 flex items-center justify-center gap-2 text-[10px] tracking-[0.3em] uppercase text-neutral-600">
+        <div className="mt-6 flex items-center justify-center gap-2 text-[10px] tracking-[0.3em] uppercase text-neutral-400">
           <LoyalkardMark size={16} /> powered by loyalkard
         </div>
       </motion.div>
@@ -269,7 +285,7 @@ function Spinner() {
 
 export default function JoinPage() {
   return (
-    <Suspense fallback={<main className="p-8 text-center text-neutral-500">Loading…</main>}>
+    <Suspense fallback={<main className="p-8 text-center text-neutral-400">Loading…</main>}>
       <JoinInner />
     </Suspense>
   );

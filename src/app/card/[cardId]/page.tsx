@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { getCard, getBusiness, submitReview, getVerificationRequest, claimAfterVerification } from "@/lib/db";
 import { celebrate } from "@/lib/confetti";
 import { downloadQrPng } from "@/lib/qr";
+import { safeUrl } from "@/lib/url";
 import { BusinessAvatar, IconSparkle } from "@/components/ui";
 import type { SubmitReviewResult, VerificationRequest } from "@/lib/types";
 import type { StampCard, Business } from "@/lib/types";
@@ -27,12 +28,15 @@ function CardInner() {
   const [pendingVerification, setPendingVerification] = useState<VerificationRequest | null>(null);
   const [rewardQrEl, setRewardQrEl] = useState<SVGSVGElement | null>(null);
   const [unclaimed, setUnclaimed] = useState(false);
+  const [businessError, setBusinessError] = useState(false);
   const verifyId = search.get("verify");
+  const notice = search.get("notice");
 
   useEffect(() => {
     let alive = true;
     let notFoundRetries = 0;
     async function load() {
+      if (document.visibilityState === "hidden") return;
       try {
         const c = await getCard(params.cardId);
         if (!alive) return;
@@ -43,7 +47,7 @@ function CardInner() {
         if (!alive) return;
         const status = (e as Error & { status?: number }).status;
         if (status === 404) {
-          // Grace period: retry 4 times (6s) before declaring 404 in case database write is settling
+          // Grace period: retry 4 times (12s) before declaring 404 in case database write is settling
           if (notFoundRetries < 4) {
             notFoundRetries++;
             return;
@@ -56,10 +60,14 @@ function CardInner() {
       }
     }
     load();
-    const t = setInterval(load, 1500);
+    const t = setInterval(load, 3_000);
+    // Refresh immediately when the customer returns to the tab.
+    const onVisible = () => { if (document.visibilityState === "visible") void load(); };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
       clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [params.cardId]);
 
@@ -67,7 +75,14 @@ function CardInner() {
   useEffect(() => {
     if (!card || card.businessId === businessIdRef.current) return;
     businessIdRef.current = card.businessId;
-    getBusiness(card.businessId).then(setBusiness).catch(() => { });
+    getBusiness(card.businessId)
+      .then((b) => {
+        setBusiness(b);
+        // A null result is a real failure (deleted business / API down), not a
+        // permanent loading state.
+        setBusinessError(!b);
+      })
+      .catch(() => setBusinessError(true));
   }, [card]);
 
   useEffect(() => {
@@ -91,25 +106,31 @@ function CardInner() {
     if (!verifyId) return;
     let cancelled = false;
     async function poll() {
-      const req = await getVerificationRequest(verifyId!);
-      if (cancelled) return;
-      if (!req || req.status === "rejected") setPendingVerification(null);
-      else if (req.status === "pending") setPendingVerification(req);
-      else {
-        setPendingVerification(null);
-        // Ask the server for our possession cookie — this device now gets
-        // its card back (new rules: access only via cookie or owner).
-        try {
-          const claimed = await claimAfterVerification(verifyId!);
-          if (claimed.cardId) setUnclaimed(false);
-        } catch {
-          /* handled by cards-cookie/claim route */
+      if (document.visibilityState === "hidden") return;
+      try {
+        const req = await getVerificationRequest(verifyId!);
+        if (cancelled) return;
+        if (!req || req.status === "rejected") setPendingVerification(null);
+        else if (req.status === "pending") setPendingVerification(req);
+        else {
+          setPendingVerification(null);
+          // Ask the server for our possession cookie — this device now gets
+          // its card back (new rules: access only via cookie or owner).
+          try {
+            const claimed = await claimAfterVerification(verifyId!);
+            if (claimed.cardId) setUnclaimed(false);
+          } catch {
+            /* handled by cards-cookie/claim route */
+          }
+          router.replace(`/card/${params.cardId}`);
         }
-        router.replace(`/card/${params.cardId}`);
+      } catch {
+        // Network hiccup — keep the current banner and retry on the next tick
+        // instead of surfacing an unhandled rejection.
       }
     }
     poll();
-    const t = setInterval(poll, 2000);
+    const t = setInterval(poll, 3_000);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -132,11 +153,37 @@ function CardInner() {
   if (notFound)
     return (
       <main className="p-8 text-center">
-        <p className="text-neutral-500">Stamp card not found.</p>
+        <p className="text-neutral-400">Stamp card not found.</p>
         <Link href="/" className="mt-3 inline-block text-sm text-[#d4af37] hover:underline">← Back home</Link>
       </main>
     );
   if (!card || !business) {
+    if (card && businessError) {
+      return (
+        <main className="p-8 text-center">
+          <p className="text-2xl">📡</p>
+          <p className="mt-2 text-sm text-neutral-300 max-w-xs mx-auto">
+            We couldn&apos;t load the restaurant details. Your card is safe — check your connection and try again.
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              setBusinessError(false);
+              try {
+                const b = await getBusiness(card.businessId);
+                setBusiness(b);
+                setBusinessError(!b);
+              } catch {
+                setBusinessError(true);
+              }
+            }}
+            className="btn-gold mt-4 rounded-full px-5 py-2 text-xs font-bold"
+          >
+            Try again
+          </button>
+        </main>
+      );
+    }
     if (unclaimed) {
       return (
         <main className="p-8 text-center">
@@ -144,7 +191,7 @@ function CardInner() {
             <>
               <p className="text-2xl">⏳</p>
               <p className="mt-2 text-sm font-semibold text-[#f0d98c]">Waiting for staff approval…</p>
-              <p className="mt-1 text-xs text-neutral-500">Your card will open here the moment staff accepts you.</p>
+              <p className="mt-1 text-xs text-neutral-400">Your card will open here the moment staff accepts you.</p>
             </>
           ) : (
             <>
@@ -153,7 +200,7 @@ function CardInner() {
                 This card is private. It opens automatically on the device where you joined — or scan the counter
                 code and enter your phone number to verify with staff.
               </p>
-              <p className="mt-1 text-xs text-neutral-600">Stamps visible here would let anyone claim your reward — that&apos;s why it&apos;s locked.</p>
+              <p className="mt-1 text-xs text-neutral-400">Stamps visible here would let anyone claim your reward — that&apos;s why it&apos;s locked.</p>
               {params.cardId?.includes("__") && (
                 <div className="mt-5">
                   <Link
@@ -169,7 +216,7 @@ function CardInner() {
         </main>
       );
     }
-    return <main className="p-8 text-center text-neutral-500">Loading your card…</main>;
+    return <main className="p-8 text-center text-neutral-400">Loading your card…</main>;
   }
 
   const max = business.loyaltyRule.requiredStamps;
@@ -185,19 +232,6 @@ function CardInner() {
   const directionsUrl = profile.address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}`
     : null;
-
-  /** Ensure URLs entered by owners without a scheme open correctly and can't
-   *  be javascript: injection vectors. */
-  function safeUrl(raw: string | undefined): string | null {
-    if (!raw) return null;
-    const trimmed = raw.trim();
-    if (!trimmed) return null;
-    // Block javascript: and data: schemes.
-    if (/^(javascript|data|vbscript):/i.test(trimmed)) return null;
-    // If no protocol is present, prepend https://.
-    if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
-    return trimmed;
-  }
 
   const whatsappUrl = profile.phone
     ? `https://wa.me/${profile.phone.replace(/\D/g, "")}`
@@ -220,6 +254,11 @@ function CardInner() {
 
   return (
     <main className="flex-1 px-4 py-10 flex flex-col items-center">
+      {notice && (
+        <div className="w-full max-w-sm mb-5 rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-center text-xs text-amber-100">
+          {notice}
+        </div>
+      )}
       {/* waiting-for-staff ribbon */}
       <AnimatePresence>
         {pendingVerification && (
@@ -277,9 +316,9 @@ function CardInner() {
               >
                 {card.currentStamps}
               </motion.span>
-              <span className="text-lg font-bold text-neutral-500">/{max}</span>
+              <span className="text-lg font-bold text-neutral-400">/{max}</span>
             </div>
-            <p className="text-[11px] tracking-[0.25em] uppercase text-neutral-500 mt-1">Stamps collected</p>
+            <p className="text-[11px] tracking-[0.25em] uppercase text-neutral-400 mt-1">Stamps collected</p>
           </div>
           <IconSparkle size={22} className="text-[#d4af37]/70" />
         </div>
@@ -350,7 +389,7 @@ function CardInner() {
                         /* silent */
                       }
                     }}
-                    className="text-[11px] text-neutral-500 hover:text-[#f0d98c] underline underline-offset-4 transition-colors"
+                    className="text-[11px] text-neutral-400 hover:text-[#f0d98c] underline underline-offset-4 transition-colors"
                   >
                     ⬇ Save QR image
                   </button>
@@ -368,7 +407,7 @@ function CardInner() {
       >
         <p className="text-[10px] tracking-[0.35em] uppercase text-[#d4af37]">Good to know</p>
         {profile.openingHours && <p className="mt-2.5 text-sm text-neutral-300">🕒 {profile.openingHours}</p>}
-        <p className="mt-2 text-xs text-neutral-500">Stamps are collected at the counter — please ask our staff to add yours.</p>
+        <p className="mt-2 text-xs text-neutral-400">Stamps are collected at the counter — please ask our staff to add yours.</p>
         <div className="mt-4 grid grid-cols-2 gap-2.5">
           <button type="button" onClick={() => setReviewOpen(true)} className={`btn-gold rounded-xl px-4 py-3 font-bold ${services.length === 0 ? "col-span-2" : ""}`}>
             ⭐ Leave a review
@@ -386,7 +425,7 @@ function CardInner() {
             </motion.a>
           ))}
         </div>
-        {profile.address && <p className="mt-3 text-xs text-neutral-500">{profile.address}</p>}
+        {profile.address && <p className="mt-3 text-xs text-neutral-400">{profile.address}</p>}
       </motion.div>
 
       {/* automated feedback after a review */}
@@ -415,7 +454,7 @@ function CardInner() {
               </a>
             )}
             <div className="mt-4">
-              <button onClick={() => setReviewResult(null)} className="text-xs text-neutral-500 hover:text-neutral-300">
+              <button onClick={() => setReviewResult(null)} className="text-xs text-neutral-400 hover:text-neutral-300">
                 dismiss
               </button>
             </div>
@@ -432,7 +471,7 @@ function CardInner() {
         />
       )}
 
-      <div className="mt-6 flex items-center gap-3 text-[10px] tracking-[0.3em] uppercase text-neutral-600">
+      <div className="mt-6 flex items-center gap-3 text-[10px] tracking-[0.3em] uppercase text-neutral-400">
         <span>lifetime rewards · {card.totalRedemptions}</span>
         <span className="w-10 h-px bg-white/10" />
         <span>verified in person</span>
@@ -457,6 +496,23 @@ function ReviewModal({
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Dialog behaviour: Escape closes, focus moves into the panel, and focus
+  // returns to the trigger afterwards.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const focusTimer = setTimeout(() => panelRef.current?.focus(), 40);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      clearTimeout(focusTimer);
+      previous?.focus?.();
+    };
+  }, [busy, onClose]);
 
   async function submit() {
     if (rating < 1) {
@@ -481,15 +537,20 @@ function ReviewModal({
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md px-4 pb-4 sm:pb-0" onClick={onClose}
     >
       <motion.div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="review-title"
+        tabIndex={-1}
         initial={{ y: 60, scale: 0.96, opacity: 0 }}
         animate={{ y: 0, scale: 1, opacity: 1 }}
         exit={{ y: 40, opacity: 0 }}
         transition={{ type: "spring", stiffness: 320, damping: 26 }}
-        className="w-full max-w-sm rounded-[28px] bg-[#12121a] border border-white/10 p-6 shadow-2xl relative overflow-hidden" onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-[28px] bg-[#12121a] border border-white/10 p-6 shadow-2xl relative overflow-hidden outline-none" onClick={(e) => e.stopPropagation()}
       >
         <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-64 h-32 rounded-full bg-[#d4af37]/15 blur-[60px]" />
         <p className="text-[10px] tracking-[0.35em] uppercase text-[#d4af37]">Review</p>
-        <h2 className="mt-1 text-xl font-bold relative" style={{ fontFamily: "var(--font-display)" }}>
+        <h2 id="review-title" className="mt-1 text-xl font-bold relative" style={{ fontFamily: "var(--font-display)" }}>
           How was {business.name}?
         </h2>
         <div className="mt-5 flex justify-center gap-2" onMouseLeave={() => setHover(0)}>
@@ -498,14 +559,16 @@ function ReviewModal({
             return (
               <motion.button
                 key={n}
+                type="button"
                 disabled={busy}
+                aria-pressed={rating === n}
                 onMouseEnter={() => setHover(n)}
                 onClick={() => setRating(n)}
                 whileHover={{ scale: 1.25, rotate: 8 }}
                 whileTap={{ scale: 0.85 }}
                 animate={lit ? { y: [-1, -6, -1] } : { y: 0 }}
                 transition={lit ? { duration: 1.6, repeat: Infinity, delay: (5 - n) * 0.12 } : {}}
-                className={`text-4xl transition-colors ${lit ? "text-[#d4af37] drop-shadow-[0_0_10px_rgba(212,175,55,0.5)]" : "text-neutral-700"}`}
+                className={`text-4xl transition-colors ${lit ? "text-[#d4af37] drop-shadow-[0_0_10px_rgba(212,175,55,0.5)]" : "text-neutral-500"}`}
                 aria-label={`${n} star${n > 1 ? "s" : ""}`}
               >
                 ★
@@ -524,8 +587,8 @@ function ReviewModal({
           />
         </div>
         {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
-        <p className="mt-3 text-[11px] text-neutral-500 flex items-center gap-1.5">
-          <span className="text-neutral-500">⭐</span> 4★ or more rewards you with a bonus stamp and sends you to Google Maps.
+        <p className="mt-3 text-[11px] text-neutral-400 flex items-center gap-1.5">
+          <span className="text-neutral-400">⭐</span> 4★ or more rewards you with a bonus stamp and sends you to Google Maps.
         </p>
         <div className="mt-4 flex gap-2.5">
           <button onClick={onClose} disabled={busy} className="flex-1 btn-ghost rounded-full py-3 text-sm font-semibold">
@@ -543,7 +606,7 @@ function ReviewModal({
 // useSearchParams needs a Suspense boundary when the page is statically rendered
 export default function CardPage() {
   return (
-    <Suspense fallback={<main className="p-8 text-center text-neutral-500">Loading your card…</main>}>
+    <Suspense fallback={<main className="p-8 text-center text-neutral-400">Loading your card…</main>}>
       <CardInner />
     </Suspense>
   );

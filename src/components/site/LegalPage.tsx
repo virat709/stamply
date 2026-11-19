@@ -22,7 +22,7 @@ export default function LegalPage({
         {title}
       </h1>
       <p className="mt-5 text-lg leading-relaxed text-neutral-400">{intro}</p>
-      <p className="mt-4 text-xs text-neutral-500">
+      <p className="mt-4 text-xs text-neutral-400">
         Last updated: <time dateTime={SITE_LAST_UPDATED}>{SITE_LAST_UPDATED_LABEL}</time>
       </p>
 
