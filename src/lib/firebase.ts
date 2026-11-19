@@ -1,6 +1,9 @@
-import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { initializeApp, getApps, getApp, type FirebaseApp } from "@firebase/app";
+import { getAuth, type Auth } from "@firebase/auth";
+
+// The browser uses Firebase Auth only. All data access goes through /api/*
+// (Firestore security rules deny direct client access), which keeps the
+// Firestore SDK out of the customer bundle and owner identity server-verified.
 
 const config = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -13,14 +16,18 @@ const config = {
 
 export const isFirebaseConfigured = Boolean(config.apiKey && config.projectId && config.appId);
 
+/** The localStorage demo (accounts + data on the device) is only for local
+ *  development. A production deploy without Firebase keys must fail loudly
+ *  instead of pretending to be a real multi-tenant service. */
+export const isDemoMode = !isFirebaseConfigured && process.env.NODE_ENV !== "production";
+export const isDemoModeBlocked = !isFirebaseConfigured && process.env.NODE_ENV === "production";
+
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
-let db: Firestore | null = null;
 
 if (isFirebaseConfigured) {
   app = getApps().length ? getApp() : initializeApp(config);
   auth = getAuth(app);
-  db = getFirestore(app);
 }
 
-export { app, auth, db };
+export { app, auth };

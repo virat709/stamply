@@ -14,6 +14,16 @@ export const contactSchema = z.object({
 
 export type ContactInput = z.infer<typeof contactSchema>;
 
+/** Staff manual-stamp lookup: either a phone or an email must be supplied. */
+export const contactLookupSchema = z
+  .object({
+    phoneNumber: z.string().trim().max(30).optional(),
+    email: z.string().trim().max(120).optional(),
+  })
+  .refine((v) => Boolean(v.phoneNumber || v.email), {
+    message: "Enter the customer's phone number or email.",
+  });
+
 export const loyaltyRuleSchema = z.object({
   requiredStamps: z.coerce.number().int().min(2).max(100),
   rewardDescription: z.string().trim().min(3, "Describe the reward").max(120),

@@ -2,12 +2,22 @@ import { hasFirestore, firestoreStore } from "./store-firestore";
 import { fileStore } from "./store-file";
 import type { Store } from "./store";
 
-/** Firestore-backed store when a service account is configured; otherwise a
- *  single-file local store so the whole server-side flow still works with
- *  zero extra setup (great for local dev — same trust guarantees within
- *  one server process). */
+/** Firestore-backed store when a service account is configured.
+ *
+ *  The single-file local store is for development only. On a serverless
+ *  production host the filesystem is read-only, so silently falling back to it
+ *  turns every join/stamp/redeem into a 500 while looking "configured". Fail
+ *  closed instead; self-hosted single-instance deployments can opt in with
+ *  LOYALKARD_ALLOW_FILE_STORE=1. */
 export function getStore(): Store {
-  return hasFirestore() ? firestoreStore : fileStore;
+  if (hasFirestore()) return firestoreStore;
+  if (process.env.NODE_ENV === "production" && process.env.LOYALKARD_ALLOW_FILE_STORE !== "1") {
+    throw new Error(
+      "Server data store is not configured. Set FIREBASE_ADMIN_CLIENT_EMAIL and FIREBASE_ADMIN_PRIVATE_KEY " +
+        "(and NEXT_PUBLIC_FIREBASE_PROJECT_ID) in the production environment."
+    );
+  }
+  return fileStore;
 }
 
 export { hasFirestore };

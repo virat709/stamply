@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server";
 import { contactSchema } from "@/lib/schemas";
 import { collect } from "@/lib/server/collect";
-import { rateLimit } from "@/lib/server/rate-limit";
+import { clientIp, rateLimit } from "@/lib/server/rate-limit";
+import { serverError } from "@/lib/server/http";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
     // Public write endpoint: cap per-IP join attempts to stop phone-number
-    // enumeration / verification-request spam.
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      req.headers.get("x-real-ip") ||
-      "local";
-    const limit = rateLimit(`collect:${ip}`, 30, 60_000);
+    // enumeration / verification-request spam. Shared counter when Upstash is
+    // configured; per-instance otherwise.
+    const ip = clientIp(req);
+    const limit = await rateLimit(`collect:${ip}`, 30, 60_000);
     if (!limit.allowed) {
       return NextResponse.json(
         { error: "Too many attempts. Please wait a moment and try again." },
@@ -27,13 +26,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Enter your name and phone number." }, { status: 400 });
     }
     return await collect({
-      businessId: String(body.businessId ?? ""),
+      businessId: typeof body.businessId === "string" ? body.businessId : "",
       name: parsed.data.name,
       phoneNumber: parsed.data.phoneNumber,
-      code: typeof body.code === "string" ? body.code : null,
+      code: typeof body.code === "string" ? body.code.slice(0, 32) : null,
       req,
     });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message ?? "Something went wrong." }, { status: 500 });
+    return serverError("collect", e);
   }
 }

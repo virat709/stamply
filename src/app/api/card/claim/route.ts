@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/server/select";
 import { mergeAndSetClaim } from "@/lib/server/cards-cookie";
+import { clientIp, rateLimit } from "@/lib/server/rate-limit";
+import { serverError } from "@/lib/server/http";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +10,14 @@ export const dynamic = "force-dynamic";
  *  in-person verification. The verification id itself is the capability. */
 export async function POST(req: Request) {
   try {
+    const limit = await rateLimit(`claim:${clientIp(req)}`, 20, 60_000);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Too many attempts. Please wait a moment." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const verificationId = String(body.verificationId ?? "");
     if (!verificationId) return NextResponse.json({ error: "Missing verification id." }, { status: 400 });
@@ -25,11 +35,12 @@ export async function POST(req: Request) {
     }
 
     const card = await store.getCardFor(v.businessId, v.customerId);
-    if (!card) return NextResponse.json({ error: "Stamp card not found." }, { status: 404 });
+    if (!card || !card.ownerToken) return NextResponse.json({ error: "Stamp card not found." }, { status: 404 });
     const res = NextResponse.json({ status: "claimed", cardId: card.id });
-    mergeAndSetClaim(req, res, v.businessId, { cardId: card.id, customerId: v.customerId, token: card.ownerToken! });
+    mergeAndSetClaim(req, res, v.businessId, { cardId: card.id, customerId: v.customerId, token: card.ownerToken });
+    res.headers.set("Cache-Control", "no-store");
     return res;
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message ?? "Server error" }, { status: 500 });
+    return serverError("card:claim", e);
   }
 }

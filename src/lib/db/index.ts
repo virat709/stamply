@@ -1,10 +1,12 @@
-import { isFirebaseConfigured } from "@/lib/firebase";
+import { isFirebaseConfigured, isDemoModeBlocked } from "@/lib/firebase";
 import * as local from "./local";
 import * as server from "./server";
 
-/** Firebase configured -> the browser talks only to /api/* (server-trusted);
- *  otherwise -> localStorage demo (dev/preview only, never production). */
-export const impl = (isFirebaseConfigured ? server : local) as unknown as typeof local;
+/** Firebase configured -> the browser talks only to /api/* (server-trusted).
+ *  Production without Firebase -> still the API (which fails closed) so no
+ *  device-local demo account can ever pretend to be a real tenant.
+ *  Development without Firebase -> localStorage demo. */
+export const impl = (isFirebaseConfigured || isDemoModeBlocked ? server : local) as unknown as typeof local;
 
 export const listBusinesses = impl.listBusinesses;
 export const getBusiness = impl.getBusiness;

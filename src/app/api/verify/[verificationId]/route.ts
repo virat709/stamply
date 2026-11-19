@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getStore } from "@/lib/server/select";
+import { serverError } from "@/lib/server/http";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ verific
     const { verificationId } = await params;
     const v = await getStore().getVerification(verificationId);
     if (!v) return NextResponse.json({ status: "not_found" });
-    return NextResponse.json({ status: v.status, expiresAt: v.expiresAt });
+    const res = NextResponse.json({ status: v.status, expiresAt: v.expiresAt });
+    res.headers.set("Cache-Control", "no-store");
+    return res;
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message ?? "Server error" }, { status: 500 });
+    return serverError("verify:get", e);
   }
 }

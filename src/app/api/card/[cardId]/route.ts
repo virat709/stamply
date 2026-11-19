@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/lib/server/select";
 import { getClaims } from "@/lib/server/cards-cookie";
 import { requireOwner } from "@/lib/server/store-firestore";
+import { serverError } from "@/lib/server/http";
 
 export const dynamic = "force-dynamic";
 
@@ -16,18 +17,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ cardId: 
     const card = await store.getCard(cardId);
     if (!card) return NextResponse.json({ error: "Stamp card not found." }, { status: 404 });
 
+    const business = await store.getBusiness(card.businessId);
+    if (!business) return NextResponse.json({ error: "Business not found." }, { status: 404 });
+
     const claims = getClaims(req);
     const claim = claims[card.businessId] || claims[card.businessId.toLowerCase()];
     const sameCard =
-      claim?.cardId === cardId ||
-      claim?.cardId?.toLowerCase() === cardId.toLowerCase();
+      claim?.cardId === card.id ||
+      claim?.cardId?.toLowerCase() === card.id.toLowerCase();
     let allowed = !!card.ownerToken && !!claim?.token && sameCard && claim?.token === card.ownerToken;
 
     if (!allowed) {
       try {
         const uid = await requireOwner(req);
-        const business = await store.getBusiness(card.businessId);
-        allowed = business?.ownerId === uid;
+        allowed = business.ownerId === uid;
       } catch {
         /* not an owner — allowed stays false */
       }
@@ -36,11 +39,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ cardId: 
       return NextResponse.json({ error: "This card is private. It opens automatically on the device where you joined." }, { status: 401 });
     }
 
-    const business = await store.getBusiness(card.businessId) ?? await store.getBusiness(card.businessId.toLowerCase());
-    if (!business) return NextResponse.json({ error: "Business not found." }, { status: 404 });
-    // Trim the business document to public fields only.
-    return NextResponse.json({
-      card: { id: card.id, currentStamps: card.currentStamps, totalRedemptions: card.totalRedemptions, businessId: card.businessId },
+    const res = NextResponse.json({
+      card: {
+        id: card.id,
+        customerId: card.customerId,
+        currentStamps: card.currentStamps,
+        totalRedemptions: card.totalRedemptions,
+        businessId: card.businessId,
+      },
+      // Trim the business document to public fields only.
       business: {
         id: business.id,
         name: business.name,
@@ -48,7 +55,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ cardId: 
         profile: business.profile ?? undefined,
       },
     });
+    res.headers.set("Cache-Control", "no-store");
+    return res;
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message ?? "Server error" }, { status: 500 });
+    return serverError("card:get", e);
   }
 }

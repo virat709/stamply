@@ -1,7 +1,6 @@
 "use client";
 
-import { auth, isFirebaseConfigured, db as fsClient } from "@/lib/firebase";
-import { getDoc, doc } from "firebase/firestore";
+import { auth, isFirebaseConfigured } from "@/lib/firebase";
 import type {
   Business, BusinessStats, Customer, Review, StampCard, StampToken,
   VerificationRequest, SubmitReviewResult,
@@ -49,21 +48,13 @@ const post = <T>(path: string, body: unknown, headers?: Record<string, string>) 
 export async function getBusiness(id: string): Promise<Business | null> {
   if (!id) return null;
   try {
+    // The API trims owner-only fields from the public profile; a direct
+    // Firestore fallback would bypass that, so there isn't one.
     const { business } = await api<{ business: Business }>(`/api/business/${encodeURIComponent(id)}`);
-    if (business) return business;
+    return business ?? null;
   } catch {
-    /* fallback to direct firestore read if API route fails */
+    return null;
   }
-  try {
-    // Public read fallback — straight from Firestore (if client firestore is populated)
-    if (fsClient) {
-      const snap = await getDoc(doc(fsClient, "businesses", id));
-      if (snap.exists()) return { id: snap.id, ...snap.data() } as Business;
-    }
-  } catch {
-    /* fall through */
-  }
-  return null;
 }
 
 export const listBusinesses = async (): Promise<Business[]> => {

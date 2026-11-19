@@ -13,8 +13,8 @@ import {
   browserLocalPersistence,
   browserSessionPersistence,
   type User,
-} from "firebase/auth";
-import { auth, isFirebaseConfigured } from "@/lib/firebase";
+} from "@firebase/auth";
+import { auth, isFirebaseConfigured, isDemoMode } from "@/lib/firebase";
 import { createBusiness, getOwnerBusinesses } from "@/lib/db";
 import type { Business } from "@/lib/types";
 
@@ -29,13 +29,32 @@ const DEMO_KEY = "loyalkard_demo_users_v1";
 interface DemoUser {
   id: string;
   email: string;
-  password: string; // demo only
+  /** Legacy demo records stored the password in plain text; they are migrated
+   *  to a hash on the next successful sign-in. */
+  password?: string;
+  passwordHash?: string;
 }
 
 function demoUsers(): DemoUser[] {
   if (typeof window === "undefined") return [];
-  return JSON.parse(window.localStorage.getItem(DEMO_KEY) ?? "[]") as DemoUser[];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DEMO_KEY) ?? "[]");
+    return Array.isArray(parsed) ? (parsed as DemoUser[]) : [];
+  } catch {
+    return [];
+  }
 }
+
+/** Demo-only credential hash. This is not a substitute for Firebase Auth (the
+ *  hash lives on the same device), but it keeps plain-text passwords out of
+ *  localStorage. */
+async function hashDemoPassword(email: string, password: string): Promise<string> {
+  const data = new TextEncoder().encode(`${email}:${password}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+const DEMO_BLOCKED_ERROR = "Owner sign-in is not configured on this deployment. Add the Firebase environment variables.";
 
 function demoWrite(users: DemoUser[]) {
   window.localStorage.setItem(DEMO_KEY, JSON.stringify(users));
@@ -103,6 +122,7 @@ export async function currentOwner(): Promise<string | null> {
     if (user) setSession(user.uid);
     return user ? user.uid : null;
   }
+  if (!isDemoMode) return null;
   try {
     const raw = window.localStorage.getItem(SESSION_KEY) as string | null;
     if (!raw) return null;
@@ -151,6 +171,8 @@ export interface AuthResult {
   uid?: string;
   business?: Business;
   redirecting?: boolean;
+  /** Account was created but the business record was not; send to /onboarding. */
+  needsOnboarding?: boolean;
 }
 
 async function applyPersistence(remember: boolean): Promise<void> {
@@ -166,7 +188,7 @@ export async function signUpOwner(restaurantName: string, email: string, passwor
   email = email.trim().toLowerCase();
   const name = restaurantName.trim();
   if (!name) return { ok: false, error: "Enter your restaurant's name." };
-  if (password.length < 6) return { ok: false, error: "Choose a password with at least 6 characters." };
+  if (password.length < 8) return { ok: false, error: "Choose a password with at least 8 characters." };
   try {
     let uid: string;
     if (isFirebaseConfigured && auth) {
@@ -176,18 +198,25 @@ export async function signUpOwner(restaurantName: string, email: string, passwor
       cachedOwner = { uid };
       setSession(uid);
     } else {
+      if (!isDemoMode) return { ok: false, error: DEMO_BLOCKED_ERROR };
       const users = demoUsers();
       if (users.some((u) => u.email === email)) {
         return { ok: false, error: "That email already has an account — sign in instead." };
       }
       uid = crypto.randomUUID();
-      users.push({ id: uid, email, password });
+      users.push({ id: uid, email, passwordHash: await hashDemoPassword(email, password) });
       demoWrite(users);
       cachedOwner = { uid };
       setSession(uid);
     }
-    const business = await createBusiness(uid, name);
-    return { ok: true, uid, business };
+    // The account exists at this point. A business-creation failure must not
+    // strand the user on "email already in use" — send them to onboarding.
+    try {
+      const business = await createBusiness(uid, name);
+      return { ok: true, uid, business };
+    } catch {
+      return { ok: true, uid, needsOnboarding: true };
+    }
   } catch (e) {
     return { ok: false, error: friendlyAuthError(e) };
   }
@@ -247,7 +276,7 @@ export async function signInOwnerWithGoogle(remember = true): Promise<AuthResult
 export async function handleGoogleRedirectResult(): Promise<AuthResult | null> {
   if (!isFirebaseConfigured || !auth) return null;
   try {
-    const { getRedirectResult } = await import("firebase/auth");
+    const { getRedirectResult } = await import("@firebase/auth");
     const result = await getRedirectResult(auth);
     if (!result) return null;
     cachedOwner = { uid: result.user.uid };
@@ -268,8 +297,21 @@ export async function signInOwner(email: string, password: string, remember = tr
       setSession(cred.user.uid);
       return { ok: true, uid: cred.user.uid };
     }
-    const user = demoUsers().find((u) => u.email === email);
-    if (!user || user.password !== password) return { ok: false, error: "Wrong email or password." };
+    if (!isDemoMode) return { ok: false, error: DEMO_BLOCKED_ERROR };
+    const users = demoUsers();
+    const user = users.find((u) => u.email === email);
+    if (!user) return { ok: false, error: "Wrong email or password." };
+    const hash = await hashDemoPassword(email, password);
+    if (user.passwordHash) {
+      if (user.passwordHash !== hash) return { ok: false, error: "Wrong email or password." };
+    } else if (user.password === password) {
+      // Migrate a legacy plain-text record to a hash.
+      user.passwordHash = hash;
+      delete user.password;
+      demoWrite(users);
+    } else {
+      return { ok: false, error: "Wrong email or password." };
+    }
     cachedOwner = { uid: user.id };
     setSession(user.id);
     return { ok: true, uid: user.id };
@@ -286,9 +328,12 @@ export async function resetOwnerPassword(email: string): Promise<AuthResult> {
       await sendPasswordResetEmail(auth, email);
       return { ok: true };
     }
-    const user = demoUsers().find((u) => u.email === email);
-    if (!user) return { ok: false, error: "No account found with that email." };
-    return { ok: true };
+    if (isDemoMode) {
+      const user = demoUsers().find((u) => u.email === email);
+      if (!user) return { ok: false, error: "No account found with that email." };
+      return { ok: true };
+    }
+    return { ok: false, error: DEMO_BLOCKED_ERROR };
   } catch (e) {
     return { ok: false, error: friendlyAuthError(e) };
   }
