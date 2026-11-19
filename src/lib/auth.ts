@@ -16,6 +16,7 @@ import {
 } from "@firebase/auth";
 import { auth, isFirebaseConfigured, isDemoMode } from "@/lib/firebase";
 import { createBusiness, getOwnerBusinesses } from "@/lib/db";
+import { firstBusinessPath } from "@/lib/businesses";
 import type { Business } from "@/lib/types";
 
 // One auth layer for both worlds:
@@ -173,6 +174,8 @@ export interface AuthResult {
   redirecting?: boolean;
   /** Account was created but the business record was not; send to /onboarding. */
   needsOnboarding?: boolean;
+  /** Root cause of a business-creation failure, shown to the owner. */
+  setupError?: string;
 }
 
 async function applyPersistence(remember: boolean): Promise<void> {
@@ -214,8 +217,11 @@ export async function signUpOwner(restaurantName: string, email: string, passwor
     try {
       const business = await createBusiness(uid, name);
       return { ok: true, uid, business };
-    } catch {
-      return { ok: true, uid, needsOnboarding: true };
+    } catch (e) {
+      // The Firebase account already exists at this point. Keep the sign-in
+      // successful, but tell the owner exactly why the console wasn't created
+      // instead of silently dropping them into an endless naming step.
+      return { ok: true, uid, needsOnboarding: true, setupError: friendlyAuthError(e) };
     }
   } catch (e) {
     return { ok: false, error: friendlyAuthError(e) };
@@ -342,8 +348,8 @@ export async function resetOwnerPassword(email: string): Promise<AuthResult> {
 /** Where should this owner land after sign-in? */
 export async function firstDashboardPath(uid: string): Promise<string> {
   try {
-    const businesses = await getOwnerBusinesses(uid);
-    if (businesses && businesses.length > 0) return `/dashboard/${businesses[0].id}`;
+    const path = firstBusinessPath(await getOwnerBusinesses(uid));
+    if (path) return path;
   } catch {
     /* fallback to onboarding if fetching businesses failed */
   }

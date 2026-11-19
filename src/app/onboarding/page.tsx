@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { currentOwner, createRestaurantForOwner, signOutOwner } from "@/lib/auth";
+import { getOwnerBusinesses } from "@/lib/db";
+import { firstBusinessPath } from "@/lib/businesses";
 import { Monogram, IconSparkle, Toast } from "@/components/ui";
 
 export default function Onboarding() {
@@ -16,14 +18,29 @@ export default function Onboarding() {
 
   useEffect(() => {
     let active = true;
-    currentOwner().then((uid) => {
-      if (!active) return;
-      if (!uid) {
-        router.replace("/login");
-        return;
-      }
-      setUid(uid);
-    });
+    currentOwner()
+      .then(async (uid) => {
+        if (!active) return;
+        if (!uid) {
+          router.replace("/login");
+          return;
+        }
+        // If the account already has a venue (e.g. signup created it but the
+        // redirect was interrupted), go there instead of asking for the name
+        // again. This also stops duplicate restaurants on refresh.
+        try {
+          const existing = firstBusinessPath(await getOwnerBusinesses(uid));
+          if (existing) {
+            router.replace(existing);
+            return;
+          }
+        } catch {
+          /* business lookup failed — let them retry by creating one */
+        }
+        if (!active) return;
+        setUid(uid);
+      })
+      .catch(() => { if (active) router.replace("/login"); });
     return () => {
       active = false;
     };
@@ -45,8 +62,8 @@ export default function Onboarding() {
       }
       const b = await createRestaurantForOwner(uid, cleanName);
       router.push(`/dashboard/${b.id}`);
-    } catch {
-      setToast({ msg: "Could not create the restaurant — try again", kind: "error" });
+    } catch (e) {
+      setToast({ msg: (e as Error).message || "Could not create the restaurant — try again", kind: "error" });
       setBusy(false);
     }
   }

@@ -113,6 +113,7 @@ export default function Login() {
           return;
         }
         const path = res.business?.id ? `/dashboard/${res.business.id}` : await firstDashboardPath(res.uid!);
+        if (res.setupError) setInfo(res.setupError);
         router.push(path); // straight into their brand-new dashboard
       } else {
         const res = await signInOwner(email, password, rememberMe);
