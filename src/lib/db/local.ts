@@ -234,12 +234,13 @@ export async function getOrCreateCard(businessId: string, customerId: string): P
 
 const STAMP_COOLDOWN_MS = 60_000;
 
-export async function addStamp(businessId: string, customerId: string): Promise<{ card: StampCard; error?: string }> {
+export async function addStamp(businessId: string, customerId: string): Promise<{ card: StampCard | null; error?: string }> {
   const db = read();
-  let card = db.cards.find((c) => c.businessId === businessId && c.customerId === customerId);
+  const card = db.cards.find((c) => c.businessId === businessId && c.customerId === customerId);
+  // Manual stamps never create a card (and therefore never create a phantom
+  // customer relationship). The customer must have joined this business.
   if (!card) {
-    card = { id: uid(), businessId, customerId, currentStamps: 0, totalRedemptions: 0, updatedAt: new Date().toISOString() };
-    db.cards.push(card);
+    return { card: null, error: "This customer hasn't joined your stamp card yet — ask them to scan your counter QR first." };
   }
   const lastStamp = [...db.visits]
     .filter((v) => v.businessId === businessId && v.customerId === customerId && v.type === "stamp_added")
@@ -289,7 +290,10 @@ export async function addStampByContact(
     ? findLocalCustomerByEmail(contact.email)
     : findLocalCustomerByPhone(contact.phone ?? "");
   if (!customer) return { message: "Customer not found." };
+  const card = await getCardFor(businessId, customer.id);
+  if (!card) return { message: "This customer hasn't joined your program yet." };
   const res = await addStamp(businessId, customer.id);
+  if (!res.card) return { message: res.error ?? "Could not add the stamp." };
   return { message: res.error ?? `Stamp added — now ${res.card.currentStamps}.` };
 }
 
@@ -380,8 +384,12 @@ export async function claimAfterVerification(verificationId: string): Promise<{ 
 
 export async function createStampToken(businessId: string): Promise<StampToken> {
   const db = read();
-  // single active token per business — rotate on each generation
-  db.tokens = db.tokens.filter((t) => !(t.businessId === businessId && !t.used));
+  // Single active token per business — rotate on each generation. Retired
+  // codes stay in the store as `invalidated` (not `used`) so the console can
+  // say "code refreshed" instead of falsely claiming a customer collected it.
+  for (const t of db.tokens) {
+    if (t.businessId === businessId && !t.used && !t.invalidated) t.invalidated = true;
+  }
   const token: StampToken = {
     code: newCode(),
     businessId,
@@ -402,12 +410,12 @@ export async function redeemStampToken(businessId: string, code: string, custome
   const db = read();
   const token = db.tokens.find((t) => t.businessId === businessId && t.code === code.toUpperCase());
   if (!token) return { ok: false, error: "Invalid code. Ask staff for the current code." };
-  if (token.used) return { ok: false, error: "This code has already been used." };
+  if (token.used || token.invalidated) return { ok: false, error: "This code has already been used." };
   if (+new Date(token.expiresAt) < Date.now()) return { ok: false, error: "This code has expired." };
   // Stamp first. Only consume the code if the stamp actually landed, so a
   // cooldown/full-card failure does not burn a valid counter code.
   const res = await addStamp(businessId, customerId);
-  if (res.error) return { ok: false, error: res.error };
+  if (!res.card || res.error) return { ok: false, error: res.error ?? "Could not add the stamp." };
   const fresh = read();
   const freshToken = fresh.tokens.find((t) => t.businessId === businessId && t.code === code.toUpperCase());
   if (freshToken) {
@@ -451,7 +459,7 @@ export async function submitReview(
   const rating = Math.min(5, Math.max(1, Math.round(input.rating)));
   if (input.customerId) {
     const mine = db.reviews
-      .filter((r) => r.customerId === input.customerId)
+      .filter((r) => r.businessId === businessId && r.customerId === input.customerId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const last = mine[0];
     if (last && Date.now() - +new Date(last.createdAt) < 60 * 60_000) {
@@ -460,15 +468,23 @@ export async function submitReview(
   }
   const recentBonus = input.customerId
     ? db.reviews.some((r) =>
+        r.businessId === businessId &&
         r.customerId === input.customerId &&
-        r.rating >= 4 &&
+        (r.bonusGranted ?? r.rating >= 4) &&
         Date.now() - +new Date(r.createdAt) < 7 * 24 * 60 * 60_000
       )
     : false;
   const feedback = autoFeedback(db.businesses.find((b) => b.id === businessId)?.name ?? "us", rating);
-  // save the review with the customer's name and mobile so the owner can
-  // reach them on WhatsApp later
+  // Save the review with the customer's name and mobile so the owner can
+  // reach them on WhatsApp later.
   const customer = input.customerId ? db.customers.find((c) => c.id === input.customerId) : undefined;
+  // Bonus first so the review records whether it actually landed. A cooldown
+  // or full-card failure must not consume the 7-day allowance.
+  let bonus: SubmitReviewResult["bonusStamp"];
+  if (rating >= 4 && input.customerId && !recentBonus) {
+    const res = await addStamp(businessId, input.customerId);
+    if (res.card) bonus = { card: res.card, error: res.error };
+  }
   const review: Review = {
     id: uid(),
     businessId,
@@ -478,22 +494,18 @@ export async function submitReview(
     rating,
     comment: input.comment || undefined,
     autoReply: feedback,
+    bonusGranted: Boolean(bonus && !bonus.error),
     createdAt: new Date().toISOString(),
   };
-  db.reviews.push(review);
-  write(db);
-  // Positive reviewers earn one bonus stamp per 7 days, subject to the normal
-  // cooldown/full-card guards.
-  let bonus: SubmitReviewResult["bonusStamp"];
-  if (rating >= 4 && input.customerId && !recentBonus) {
-    bonus = await addStamp(businessId, input.customerId);
-  }
-  const business = db.businesses.find((b) => b.id === businessId);
+  // Re-read: addStamp may have written the store while this snapshot was open.
+  const fresh = read();
+  fresh.reviews.push(review);
+  write(fresh);
   return {
     feedback,
     review,
     // every reviewer can post to Google Maps via the owner's saved link
-    googleUrl: business?.profile?.googleReviewUrl || undefined,
+    googleUrl: fresh.businesses.find((b) => b.id === businessId)?.profile?.googleReviewUrl || undefined,
     bonusStamp: bonus,
   };
 }
@@ -591,7 +603,7 @@ export async function approveVerificationRequest(businessId: string, id: string)
   // addStamp re-reads and writes the store — so re-read before marking the
   // request approved, otherwise this stale snapshot would erase the new stamp.
   const res = await addStamp(businessId, req.customerId);
-  if (res.error) return { ok: false, error: res.error };
+  if (!res.card || res.error) return { ok: false, error: res.error ?? "Could not add the stamp." };
   const fresh = read();
   const freshReq = fresh.verifications.find((v) => v.id === req.id);
   if (freshReq) {

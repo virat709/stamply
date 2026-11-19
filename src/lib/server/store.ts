@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type {
   Business,
   BusinessStats,
@@ -38,6 +38,36 @@ export function cardIdFor(businessId: string, customerId: string): string {
   return `${businessId}__${customerId}`;
 }
 
+/** One canonical form for a business id. Used for token documents so a
+ *  capitalised dashboard URL can never mint a code the join flow can't read. */
+export function businessKey(businessId: string): string {
+  return (businessId ?? "").trim().toLowerCase();
+}
+
+/** Document id for a counter code. Always canonical so mint/read/consume all
+ *  agree on the same key. */
+export function tokenDocId(businessId: string, code: string): string {
+  return `${(code ?? "").trim().toUpperCase()}_${businessKey(businessId)}`;
+}
+
+/** Deterministic customer id derived from the normalised phone number. Two
+ *  concurrent joins for the same number therefore resolve to the same
+ *  document instead of creating duplicates. */
+export function customerIdForPhone(phone: string): string {
+  const normalized = normalizePhone(phone);
+  const digest = createHash("sha256").update(normalized).digest("hex");
+  return `c_${digest.slice(0, 24)}`;
+}
+
+/** decodeURIComponent that never throws on a malformed route param. */
+export function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function normalizePhone(phone?: string): string {
   return (phone ?? "").replace(/[^0-9+]/g, "");
 }
@@ -69,6 +99,10 @@ export interface Store {
   findCustomerByPhone(phone: string): Promise<Customer | null>;
   findCustomerByEmail(email: string): Promise<Customer | null>;
   createCustomer(input: { name?: string; phoneNumber: string }): Promise<Customer>;
+  /** Create only if the phone number is unknown. `created: false` means a
+   *  concurrent request won the race — the caller must use the returning-
+   *  customer (verification) flow, never grant a claim. */
+  registerCustomer(input: { name?: string; phoneNumber: string }): Promise<{ customer: Customer; created: boolean }>;
   // cards + stamps (all mutations atomic server-side)
   getCard(cardId: string): Promise<StampCard | null>;
   getCardFor(businessId: string, customerId: string): Promise<StampCard | null>;
@@ -91,6 +125,9 @@ export interface Store {
   /** Review rate limits are enforced by the caller (route). */
   addReview(businessId: string, input: { rating: number; comment?: string; customerId: string; grantBonus?: boolean }): Promise<{ review: Review; bonus: StampCard | string | null }>;
   listReviews(businessId: string): Promise<Review[]>;
-  /** Number of bonus-stamp-earning reviews this customer left in the window. */
-  countRecentBonuses(customerId: string, sinceISO: string): Promise<number>;
+  /** Most recent review this customer left for this business. */
+  getLastReviewFor(businessId: string, customerId: string): Promise<Review | null>;
+  /** Bonus stamps actually granted to this customer at this business inside
+   *  the window. Failed bonus attempts must not consume the allowance. */
+  countRecentBonuses(businessId: string, customerId: string, sinceISO: string): Promise<number>;
 }

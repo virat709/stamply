@@ -37,6 +37,9 @@ export interface Business {
   name: string;
   logoUrl?: string;
   ownerId?: string; // uid of the restaurant account that owns this business (demo/legacy businesses have none)
+  /** Set by the public API so the console can tell an ownerless demo business
+   *  apart from a real business whose ownerId was withheld. */
+  hasOwner?: boolean;
   loyaltyRule: LoyaltyRule;
   profile?: BusinessProfile;
   createdAt: string; // ISO
@@ -92,6 +95,10 @@ export interface StampToken {
   expiresAt: string;
   used: boolean;
   usedByCustomerId?: string;
+  /** True when staff refreshed the counter and this code was retired without
+   *  anybody scanning it. Distinct from `used` so the console never shows a
+   *  false "customer collected a stamp" message. */
+  invalidated?: boolean;
 }
 
 export interface BusinessStats {
@@ -113,6 +120,9 @@ export interface Review {
   rating: number; // 1-5
   comment?: string;
   autoReply: string; // automated feedback shown to the customer
+  /** True only when the review actually produced a bonus stamp. Legacy reviews
+   *  without this field are treated as bonus-earning when rating >= 4. */
+  bonusGranted?: boolean;
   createdAt: string;
 }
 

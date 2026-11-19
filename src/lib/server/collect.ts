@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStore } from "./select";
 import { mergeAndSetClaim as setClaim } from "./cards-cookie";
-import { normalizePhone, type CollectOutcome } from "./store";
+import { businessKey, normalizePhone, type CollectOutcome } from "./store";
 
 /** The single entry point for the customer join/collect flow:
  *  - new customer  -> register + card, stamp immediately when a live counter
@@ -21,15 +21,25 @@ export async function collect(input: {
   const business = await store.getBusiness(input.businessId);
   if (!business) return NextResponse.json({ error: "This loyalty program doesn't exist." }, { status: 404 });
 
-  const bId = business.id; // canonical ID
+  const bId = businessKey(business.id); // canonical ID
   const phone = normalizePhone(input.phoneNumber);
   let customer = await store.findCustomerByPhone(phone);
+  let created = false;
+
+  if (!customer) {
+    // Register only if the number is still unknown. If a simultaneous request
+    // won the race, `created` is false and we fall through to verification —
+    // never grant a possession cookie to a second device.
+    const registered = await store.registerCustomer({ name: input.name, phoneNumber: phone });
+    customer = registered.customer;
+    created = registered.created;
+  }
+
   let error: string | undefined;
   let status: CollectOutcome["status"];
 
-  if (!customer) {
+  if (created) {
     // ---- new member ----
-    customer = await store.createCustomer({ name: input.name, phoneNumber: phone });
     const card = await store.getOrCreateCard(bId, customer.id);
     status = "registered";
     if (input.code) {
@@ -43,6 +53,7 @@ export async function collect(input: {
       customerId: customer.id,
       error,
     });
+    res.headers.set("Cache-Control", "no-store");
     grantClaim(input.req, res, card, bId);
     return res;
   }
@@ -52,12 +63,14 @@ export async function collect(input: {
   // (and any stamp) requires staff approval in the owner console.
   const card = await store.getOrCreateCard(bId, customer.id);
   const verification = await store.createVerification(bId, customer.id, input.name, phone);
-  return NextResponse.json<CollectOutcome>({
+  const res = NextResponse.json<CollectOutcome>({
     status: "pending_verification",
     cardId: card.id,
     customerId: customer.id,
     verificationId: verification.id,
   });
+  res.headers.set("Cache-Control", "no-store");
+  return res;
 }
 
 function grantClaim(
