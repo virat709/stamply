@@ -8,12 +8,12 @@ const isDev = process.env.NODE_ENV === "development";
 // production, no object/embed, no arbitrary script origins.
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://apis.google.com https://www.gstatic.com https://*.firebaseapp.com https://va.vercel-scripts.com`,
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://apis.google.com https://www.gstatic.com https://*.firebaseapp.com https://va.vercel-scripts.com https://checkout.razorpay.com`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.google-analytics.com https://*.vercel-insights.com https://va.vercel-scripts.com https://vitals.vercel-insights.com",
-  "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
+  "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://api.razorpay.com https://checkout.razorpay.com",
   "media-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",

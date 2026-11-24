@@ -1,63 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import JsonLd from "@/components/site/JsonLd";
+import PricingCards from "@/components/site/PricingCards";
 import { pageMetadata, pageSchema } from "@/lib/seo";
+import { BILLING_PERIODS, PERIOD_LABELS, PLANS, formatINR } from "@/lib/plans";
 import { SITE_CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/site";
 
 const description =
-  "Loyalkard pricing for cafés, restaurants and retail. Start with the free demo, then choose a per-location plan. Contact us for a quote based on your business.";
+  "Loyalkard pricing for cafés, restaurants and retail. Start with a 14-day free trial, then choose a 6-month or yearly plan from ₹4,999 — per location, never per customer or stamp.";
 
 export const metadata: Metadata = pageMetadata({
   path: "/pricing",
   title: "Pricing",
   description,
 });
-
-const plans = [
-  {
-    name: "Free demo",
-    price: "Free",
-    note: "No card required",
-    description: "Explore the full customer flow and owner console with sample data.",
-    cta: { label: "Try the demo", href: "/b/demo-cafe" },
-    featured: false,
-    features: [
-      "Customer join and stamp flow",
-      "Owner console preview",
-      "Sample rewards, reviews and analytics",
-    ],
-  },
-  {
-    name: "Counter",
-    price: "Contact us",
-    note: "For one location",
-    description: "Run your stamp card, rewards and reviews from a single counter.",
-    cta: { label: "Book a demo", href: "/contact" },
-    featured: true,
-    features: [
-      "Digital stamp card and counter QR",
-      "Staff-verified returning visits",
-      "Reward QR and redemption log",
-      "Google review prompts",
-      "Customer CSV export",
-      "Counter and community QR codes",
-    ],
-  },
-  {
-    name: "Multi-location",
-    price: "Contact us",
-    note: "For growing teams",
-    description: "A shared setup for businesses running more than one location.",
-    cta: { label: "Talk to us", href: "/contact" },
-    featured: false,
-    features: [
-      "Everything in Counter",
-      "Multiple business locations",
-      "Central owner access",
-      "Onboarding and rollout support",
-    ],
-  },
-];
 
 const included = [
   "Digital stamp cards with no customer app",
@@ -73,11 +29,11 @@ const included = [
 const faqs = [
   {
     q: "How does Loyalkard pricing work?",
-    a: "Loyalkard is priced per business location. You can explore the free demo without signing up, then contact us for a quote based on your locations, team and rollout needs.",
+    a: "Loyalkard is priced per business location, billed every 6 months or yearly. The free demo needs no signup. Paid plans start at ₹4,999 for 6 months or ₹8,999 per year for one location, with a 14-day free trial.",
   },
   {
     q: "Is there a free trial?",
-    a: "Yes. The customer and owner demos are free and do not require a card. For a guided trial with your own branding and reward rules, contact us.",
+    a: "Yes. Every paid plan starts with a 14-day free trial. You choose your plan and duration at signup, and Razorpay only begins billing after the trial ends. Cancel before then and you are not charged.",
   },
   {
     q: "Do customers pay anything?",
@@ -89,7 +45,7 @@ const faqs = [
   },
   {
     q: "Can I cancel or change plans?",
-    a: "Contact us before your next billing date to change or cancel a plan. The terms confirmed in your order apply.",
+    a: "Yes. Cancel anytime from your Razorpay subscription — access continues until the end of the period you paid for. To change plans or add locations, contact us before your next billing date.",
   },
 ];
 
@@ -102,14 +58,26 @@ const pricingJsonLd = {
       name: SITE_NAME,
       description,
       brand: { "@type": "Brand", name: SITE_NAME },
-      offers: {
-        "@type": "Offer",
-        name: "Free demo",
-        price: "0",
-        priceCurrency: "INR",
-        availability: "https://schema.org/InStock",
-        url: `${SITE_URL}/b/demo-cafe`,
-      },
+      offers: [
+        {
+          "@type": "Offer",
+          name: "Free demo",
+          price: "0",
+          priceCurrency: "INR",
+          availability: "https://schema.org/InStock",
+          url: `${SITE_URL}/b/demo-cafe`,
+        },
+        ...PLANS.flatMap((plan) =>
+          BILLING_PERIODS.map((period) => ({
+            "@type": "Offer",
+            name: `${plan.name} — ${PERIOD_LABELS[period]}`,
+            price: String(plan.prices[period]),
+            priceCurrency: "INR",
+            availability: "https://schema.org/InStock",
+            url: `${SITE_URL}/pricing`,
+          }))
+        ),
+      ],
     },
     {
       "@type": "FAQPage",
@@ -148,51 +116,12 @@ export default function PricingPage() {
             Simple pricing for every counter
           </h1>
           <p className="mt-5 text-lg leading-relaxed text-neutral-400">
-            Start with the free demo, then choose a plan that fits the number of locations you run. We do not
-            charge per customer or per stamp.
+            Start with a 14-day free trial, then choose 6 months or yearly from {formatINR(PLANS[0].prices["6m"])}.
+            Priced per location — never per customer or per stamp.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-5 lg:grid-cols-3">
-          {plans.map((plan) => (
-            <div
-              key={plan.name}
-              className={`relative flex flex-col rounded-[28px] border p-6 ${
-                plan.featured
-                  ? "border-[#d4af37]/50 bg-[#d4af37]/[0.07] shadow-[0_0_40px_-20px_rgba(212,175,55,0.6)]"
-                  : "border-white/10 bg-white/[0.03]"
-              }`}
-            >
-              {plan.featured && (
-                <span className="absolute -top-3 left-6 rounded-full bg-[#d4af37] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#211705]">
-                  Most popular
-                </span>
-              )}
-              <p className="text-[10px] uppercase tracking-[0.3em] text-[#d4af37]">{plan.note}</p>
-              <h2 className="mt-3 text-2xl font-bold text-neutral-100">{plan.name}</h2>
-              <p className="mt-2 text-sm leading-6 text-neutral-400">{plan.description}</p>
-              <p className="mt-5 text-2xl font-black text-neutral-100">{plan.price}</p>
-              <ul className="mt-5 flex-1 space-y-2.5 text-sm text-neutral-400">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex gap-2.5">
-                    <span className="mt-0.5 text-[#d4af37]">✓</span>
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link
-                href={plan.cta.href}
-                className={`mt-7 rounded-full px-5 py-3 text-center text-sm font-bold transition ${
-                  plan.featured
-                    ? "btn-gold"
-                    : "border border-white/15 bg-white/5 text-neutral-200 hover:bg-white/10"
-                }`}
-              >
-                {plan.cta.label}
-              </Link>
-            </div>
-          ))}
-        </div>
+        <PricingCards />
 
         <div className="mt-14 grid gap-8 rounded-[28px] border border-white/10 bg-white/[0.03] p-7 md:grid-cols-[1fr_1.4fr] md:p-10">
           <div>
