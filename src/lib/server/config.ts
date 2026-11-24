@@ -113,6 +113,8 @@ export function firebasePrivateKey(raw?: string): string | undefined {
   return raw?.replace(/\\n/g, "\n");
 }
 
+const CREDENTIAL_NAME_PATTERN = /FIREBASE|GOOGLE|GCP|SERVICE[_ -]?ACCOUNT|PRIVATE[_ -]?KEY|CLIENT[_ -]?EMAIL|APPLICATION[_ -]?CREDENTIALS/i;
+
 /** Diagnostic view of the runtime environment. Contains NAMES only — never values,
  *  including resolved credentials. Safe to serialize to a public endpoint. */
 export function credentialStatus() {
@@ -120,6 +122,9 @@ export function credentialStatus() {
   const parsed = parseServiceAccount(source.raw);
   return {
     presentCredentialVars: CREDENTIAL_ENV_NAMES.filter((name) => firstEnv([name]) !== undefined),
+    credentialLikeVars: Object.keys(process.env)
+      .filter((name) => CREDENTIAL_NAME_PATTERN.test(name) && firstEnv([name]) !== undefined)
+      .sort(),
     serviceAccountVar: source.name,
     malformedServiceAccount: !!source.raw && !parsed,
   };

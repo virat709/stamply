@@ -21,6 +21,7 @@ export async function GET() {
       // Names only — useful for spotting credentials stored under a different
       // variable name in the hosting dashboard. Never include values.
       presentCredentialVars: credentials.presentCredentialVars,
+      credentialLikeVars: credentials.credentialLikeVars,
       malformedServiceAccount: credentials.malformedServiceAccount,
     },
   });

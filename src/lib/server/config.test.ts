@@ -107,4 +107,11 @@ describe("credentialStatus", () => {
     expect(status.presentCredentialVars).toContain("FIREBASE_ADMIN_CLIENT_EMAIL");
     expect(JSON.stringify(status)).not.toContain("super-secret-value");
   });
+
+  it("spots credential-like variable names outside the known aliases", () => {
+    vi.stubEnv("MY_WEIRD_FIREBASE_SERVICE_ACCOUNT_THING", "value-should-not-appear");
+    const status = credentialStatus();
+    expect(status.credentialLikeVars).toContain("MY_WEIRD_FIREBASE_SERVICE_ACCOUNT_THING");
+    expect(JSON.stringify(status)).not.toContain("value-should-not-appear");
+  });
 });
