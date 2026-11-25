@@ -4,7 +4,7 @@ import { getStore } from "@/lib/server/select";
 import { requireOwner } from "@/lib/server/store-firestore";
 import { serverError, jsonNoStore } from "@/lib/server/http";
 import { rateLimit, clientIp } from "@/lib/server/rate-limit";
-import { saveBillingRecord } from "@/lib/server/billing-store";
+import { getBillingRecord, saveBillingRecord } from "@/lib/server/billing-store";
 import { createSubscription } from "@/lib/server/razorpay";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +48,14 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Create a café in your dashboard first, then choose a plan." },
         { status: 400 }
+      );
+    }
+
+    const existing = await getBillingRecord(business.id);
+    if (existing?.status === "active") {
+      return NextResponse.json(
+        { error: "This café already has an active subscription. Contact us to change plans." },
+        { status: 409 }
       );
     }
 

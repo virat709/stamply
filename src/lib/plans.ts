@@ -58,14 +58,6 @@ export function formatINR(amount: number): string {
   return `₹${amount.toLocaleString("en-IN")}`;
 }
 
-export function parsePlanId(value: unknown): PlanId | null {
-  return value === "counter" || value === "multi" ? value : null;
-}
-
-export function parseBillingPeriod(value: unknown): BillingPeriod | null {
-  return value === "6m" || value === "12m" ? value : null;
-}
-
 /** Convert INR to paise for the Razorpay API. */
 export function toPaise(amountInINR: number): number {
   return Math.round(amountInINR * 100);

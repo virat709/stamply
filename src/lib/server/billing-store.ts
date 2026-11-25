@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { BillingPeriod, PlanId } from "@/lib/plans";
@@ -91,11 +92,13 @@ export async function getBillingRecord(businessId: string): Promise<BillingRecor
   return (await readFileState()).subscriptions[businessId] ?? null;
 }
 
-/** Returns false when the event was already handled. */
+/** Returns false when the event was already handled. The raw key contains
+ *  colons and dots, so hash it into a safe, bounded Firestore document id. */
 export async function claimWebhookEvent(eventId: string): Promise<boolean> {
-  if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId)) return false;
+  if (!eventId || eventId.length > 300) return false;
+  const docId = createHash("sha256").update(eventId).digest("hex");
   if (hasFirestore()) {
-    const ref = dataDb().collection("billingEvents").doc(eventId);
+    const ref = dataDb().collection("billingEvents").doc(docId);
     const claimed = await dataDb().runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (snap.exists) return false;
@@ -105,8 +108,8 @@ export async function claimWebhookEvent(eventId: string): Promise<boolean> {
     return claimed;
   }
   const state = await readFileState();
-  if (state.events[eventId]) return false;
-  state.events[eventId] = true;
+  if (state.events[docId]) return false;
+  state.events[docId] = true;
   await writeFileState(state);
   return true;
 }

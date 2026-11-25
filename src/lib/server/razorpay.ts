@@ -33,8 +33,10 @@ function api(config: RazorpayConfig): Razorpay {
   return client;
 }
 
-function planKey(planId: PlanId, period: BillingPeriod): string {
-  return `${planId}_${period}`;
+/** Include the amount in the cache key: Razorpay plans cannot be edited, so a
+ *  price change must create a new plan rather than reuse the old one. */
+function planKey(planId: PlanId, period: BillingPeriod, amountPaise: number): string {
+  return `${planId}_${period}_${amountPaise}`;
 }
 
 const PLAN_ENV: Record<string, string> = {
@@ -46,15 +48,17 @@ const PLAN_ENV: Record<string, string> = {
 
 /** Resolve a Razorpay plan id, creating the plan once if no id is pinned. */
 export async function getOrCreatePlanId(planId: PlanId, period: BillingPeriod): Promise<string> {
-  const key = planKey(planId, period);
-  const pinned = process.env[PLAN_ENV[key]]?.trim();
+  const definition = PLANS.find((p) => p.id === planId);
+  if (!definition) throw new Error("Unknown plan.");
+  const amount = toPaise(definition.prices[period]);
+  const baseKey = `${planId}_${period}`;
+  const key = planKey(planId, period, amount);
+
+  const pinned = process.env[PLAN_ENV[baseKey]]?.trim();
   if (pinned) return pinned;
 
   const cached = await getPlanRef(key);
   if (cached) return cached.planId;
-
-  const definition = PLANS.find((p) => p.id === planId);
-  if (!definition) throw new Error("Unknown plan.");
 
   const isYearly = period === "12m";
   const plan = await api(razorpayConfig()).plans.create({
@@ -62,7 +66,7 @@ export async function getOrCreatePlanId(planId: PlanId, period: BillingPeriod): 
     interval: isYearly ? 1 : 6,
     item: {
       name: `Loyalkard ${definition.name}`,
-      amount: toPaise(definition.prices[period]),
+      amount,
       currency: "INR",
       description: `${definition.name} — ${isYearly ? "yearly" : "6 months"}`,
     },
@@ -92,7 +96,8 @@ export async function createSubscription(input: {
 
 /** Constant-time HMAC check of the raw webhook body. */
 export function verifyWebhookSignature(rawBody: string, signature: string | null): boolean {
-  const secret = razorpayConfig().webhookSecret;
+  // Only the webhook secret is needed here — key id/secret are for outbound API calls.
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
   if (!secret || !signature) return false;
   const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
   const a = Buffer.from(expected, "utf8");

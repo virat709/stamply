@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PLANS, formatINR, parseBillingPeriod, parsePlanId, toPaise } from "./plans";
+import { PLANS, formatINR, toPaise } from "./plans";
 
 describe("plan catalog", () => {
   it("uses the agreed INR prices for both plans and durations", () => {
@@ -16,12 +16,5 @@ describe("plan catalog", () => {
   it("converts INR to paise without floating point drift", () => {
     expect(toPaise(4999)).toBe(499900);
     expect(toPaise(8999)).toBe(899900);
-  });
-
-  it("rejects unknown plan ids and billing periods", () => {
-    expect(parsePlanId("counter")).toBe("counter");
-    expect(parsePlanId("enterprise")).toBeNull();
-    expect(parseBillingPeriod("12m")).toBe("12m");
-    expect(parseBillingPeriod("1m")).toBeNull();
   });
 });
