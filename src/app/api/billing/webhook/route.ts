@@ -57,11 +57,13 @@ export async function POST(req: Request) {
 
     const existing = await getBillingRecord(businessId);
     // Never let a webhook for an unknown subscription overwrite a real record.
-    if (!existing || existing.subscriptionId !== entity.id) return jsonNoStore({ received: true });
+    const matches = existing?.subscriptionId === entity.id || existing?.subscriptionId === "pending";
+    if (!existing || !matches) return jsonNoStore({ received: true });
     if (!canTransition(existing.status, nextStatus)) return jsonNoStore({ received: true });
 
     await saveBillingRecord({
       ...existing,
+      subscriptionId: entity.id,
       status: nextStatus,
       planId: (typeof notes.planId === "string" ? notes.planId : existing.planId) as PlanId,
       period: (typeof notes.period === "string" ? notes.period : existing.period) as BillingPeriod,

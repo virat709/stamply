@@ -59,6 +59,16 @@ export async function POST(req: Request) {
       );
     }
 
+    // Record the intent before calling Razorpay. If the second save fails, the
+    // webhook can still heal this record using the "pending" subscription id.
+    await saveBillingRecord({
+      businessId: business.id,
+      planId,
+      period,
+      subscriptionId: "pending",
+      status: "pending",
+      updatedAt: new Date().toISOString(),
+    });
     const checkout = await createSubscription({ planId, period, businessId: business.id });
     await saveBillingRecord({
       businessId: business.id,

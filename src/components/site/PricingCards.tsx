@@ -141,7 +141,7 @@ export default function PricingCards() {
             <h2 className="mt-3 text-2xl font-bold text-neutral-100">{plan.name}</h2>
             <p className="mt-2 text-sm leading-6 text-neutral-400">{plan.description}</p>
             <p className="mt-5 text-3xl font-black text-neutral-100">{formatINR(plan.prices[period])}</p>
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="mt-1 text-xs text-neutral-400">
               billed {PERIOD_LABELS[period].toLowerCase()} · per location · cancels anytime
             </p>
             <ul className="mt-5 flex-1 space-y-2.5 text-sm text-neutral-400">

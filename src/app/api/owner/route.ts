@@ -4,6 +4,7 @@ import { requireOwner } from "@/lib/server/store-firestore";
 import { businessSaveSchema, contactLookupSchema } from "@/lib/schemas";
 import { serverError } from "@/lib/server/http";
 import { clientIp, rateLimit } from "@/lib/server/rate-limit";
+import { billingAllows } from "@/lib/server/billing-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -95,9 +96,12 @@ export async function GET(req: Request) {
     }
     const g = businessId ? await guard(req, businessId) : NextResponse.json({ error: "businessId required." }, { status: 400 });
     if (g instanceof NextResponse) return g;
+    const bId = g.businessId ?? businessId!;
+    if (!(await billingAllows(bId))) {
+      return NextResponse.json({ error: "An active subscription is required for this console." }, { status: 403 });
+    }
     const demoLimited = await demoRateLimit(req, g.uid);
     if (demoLimited) return demoLimited;
-    const bId = g.businessId ?? businessId!;
     const store = getStore();
 
     switch (kind) {
@@ -148,6 +152,9 @@ export async function POST(req: Request) {
     // Always operate on the canonical business id from the database, never on
     // the casing the browser happened to send.
     const bId = g.businessId;
+    if (bId && !(await billingAllows(bId))) {
+      return NextResponse.json({ error: "An active subscription is required for this console." }, { status: 403 });
+    }
 
     switch (action) {
       case "create-business": {

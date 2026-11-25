@@ -22,6 +22,7 @@ export function canTransition(
   next: SubscriptionStatus
 ): boolean {
   if (!current) return true;
+  if (current === "pending") return next !== "pending";
   if (current === "expired") return false;
   if (current === "cancelled") return next === "expired";
   if (current === "created") return next !== "created";

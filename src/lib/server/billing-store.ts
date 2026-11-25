@@ -13,7 +13,7 @@ export interface PlanRef {
   createdAt: string;
 }
 
-export type SubscriptionStatus = "created" | "active" | "cancelled" | "expired";
+export type SubscriptionStatus = "pending" | "created" | "active" | "cancelled" | "expired";
 
 export interface BillingRecord {
   businessId: string;

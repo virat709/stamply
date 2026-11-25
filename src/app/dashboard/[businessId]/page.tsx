@@ -7,6 +7,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { QrDownloadButtons } from "@/components/QrDownloadButtons";
+import BillingBanner from "@/components/BillingBanner";
 import { escapeCsvField } from "@/lib/csv";
 import {
   getBusiness, saveBusiness, addStampByContact, redeemReward,
@@ -136,6 +137,7 @@ export default function Dashboard() {
 
       {/* ── page content ── */}
       <div className="flex-1 px-4 pt-4 max-w-lg mx-auto w-full">
+        <BillingBanner businessId={params.businessId} />
         <AnimatePresence mode="wait">
           <motion.div
             key={tab}

@@ -25,6 +25,12 @@ describe("subscription status transitions", () => {
     expect(canTransition("created", "created")).toBe(false);
     expect(canTransition("cancelled", "cancelled")).toBe(false);
   });
+
+  it("lets a pending checkout record be activated by its first webhook", () => {
+    expect(canTransition("pending", "active")).toBe(true);
+    expect(canTransition("pending", "cancelled")).toBe(true);
+    expect(canTransition("pending", "pending")).toBe(false);
+  });
 });
 
 describe("webhook dedupe key", () => {
