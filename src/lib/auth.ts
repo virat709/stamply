@@ -79,13 +79,33 @@ function clearSession() {
 let cachedOwner: { uid: string } | null | undefined;
 let listenerStarted = false;
 
+/** Firebase can finish a sign-in before every onAuthStateChanged listener has
+ *  published the new user. During that window a route change (login ->
+ *  onboarding -> login) used to read currentOwner() as null and bounce the
+ *  freshly signed-in owner back to /login. Remember a successful sign-in for a
+ *  short grace period so the cached uid stays authoritative until Auth catches
+ *  up. Module state survives client-side navigation but resets on full reload,
+ *  where Auth's own persisted session is the source of truth. */
+const SIGN_IN_GRACE_MS = 30_000;
+let signedInAt = 0;
+
+function markSignedIn(uid: string): void {
+  cachedOwner = { uid };
+  signedInAt = Date.now();
+  setSession(uid);
+}
+
 function startAuthListener(): void {
   if (listenerStarted || !auth) return;
   listenerStarted = true;
   onAuthStateChanged(auth, (user) => {
-    cachedOwner = user ? { uid: user.uid } : null;
-    if (user) setSession(user.uid);
-    else clearSession();
+    if (user) {
+      markSignedIn(user.uid);
+    } else if (Date.now() - signedInAt >= SIGN_IN_GRACE_MS) {
+      // Ignore a stale "signed out" event right after a successful sign-in.
+      cachedOwner = null;
+      clearSession();
+    }
   });
 }
 
@@ -93,17 +113,24 @@ export async function currentOwner(): Promise<string | null> {
   if (isFirebaseConfigured && auth) {
     startAuthListener();
     if (auth.currentUser) {
-      cachedOwner = { uid: auth.currentUser.uid };
-      setSession(auth.currentUser.uid);
+      markSignedIn(auth.currentUser.uid);
       return auth.currentUser.uid;
     }
     if (typeof auth.authStateReady === "function") {
       await auth.authStateReady();
       const u = auth.currentUser as User | null;
-      cachedOwner = u ? { uid: u.uid } : null;
-      if (u) setSession(u.uid);
-      else clearSession();
-      return u ? u.uid : null;
+      if (u) {
+        markSignedIn(u.uid);
+        return u.uid;
+      }
+      // Auth reports no user, but a sign-in completed moments ago in this SPA
+      // session. Trust the handoff instead of sending the owner back to login.
+      if (cachedOwner?.uid && Date.now() - signedInAt < SIGN_IN_GRACE_MS) {
+        return cachedOwner.uid;
+      }
+      cachedOwner = null;
+      clearSession();
+      return null;
     }
     if (cachedOwner !== undefined) return cachedOwner ? cachedOwner.uid : null;
     const authInstance = auth;
@@ -119,9 +146,12 @@ export async function currentOwner(): Promise<string | null> {
         resolve(authInstance.currentUser);
       }, 4000);
     });
-    cachedOwner = user ? { uid: user.uid } : null;
-    if (user) setSession(user.uid);
-    return user ? user.uid : null;
+    if (user) {
+      markSignedIn(user.uid);
+      return user.uid;
+    }
+    cachedOwner = null;
+    return null;
   }
   if (!isDemoMode) return null;
   try {
@@ -140,6 +170,7 @@ export async function currentOwner(): Promise<string | null> {
 
 export async function signOutOwner(): Promise<void> {
   cachedOwner = null;
+  signedInAt = 0;
   clearSession();
   if (isFirebaseConfigured && auth) await signOut(auth);
 }
@@ -198,8 +229,7 @@ export async function signUpOwner(restaurantName: string, email: string, passwor
       await applyPersistence(remember);
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       uid = cred.user.uid;
-      cachedOwner = { uid };
-      setSession(uid);
+      markSignedIn(uid);
     } else {
       if (!isDemoMode) return { ok: false, error: DEMO_BLOCKED_ERROR };
       const users = demoUsers();
@@ -209,8 +239,7 @@ export async function signUpOwner(restaurantName: string, email: string, passwor
       uid = crypto.randomUUID();
       users.push({ id: uid, email, passwordHash: await hashDemoPassword(email, password) });
       demoWrite(users);
-      cachedOwner = { uid };
-      setSession(uid);
+      markSignedIn(uid);
     }
     // The account exists at this point. A business-creation failure must not
     // strand the user on "email already in use" — send them to onboarding.
@@ -258,8 +287,7 @@ export async function signInOwnerWithGoogle(remember = true): Promise<AuthResult
   // On desktop browsers, try popup first
   try {
     const cred = await signInWithPopup(auth, provider);
-    cachedOwner = { uid: cred.user.uid };
-    setSession(cred.user.uid);
+    markSignedIn(cred.user.uid);
     return { ok: true, uid: cred.user.uid };
   } catch (e: unknown) {
     const code = (e as { code?: string }).code ?? "";
@@ -285,8 +313,7 @@ export async function handleGoogleRedirectResult(): Promise<AuthResult | null> {
     const { getRedirectResult } = await import("@firebase/auth");
     const result = await getRedirectResult(auth);
     if (!result) return null;
-    cachedOwner = { uid: result.user.uid };
-    setSession(result.user.uid);
+    markSignedIn(result.user.uid);
     return { ok: true, uid: result.user.uid };
   } catch (e) {
     return { ok: false, error: friendlyAuthError(e) };
@@ -299,8 +326,7 @@ export async function signInOwner(email: string, password: string, remember = tr
     if (isFirebaseConfigured && auth) {
       await applyPersistence(remember);
       const cred = await signInWithEmailAndPassword(auth, email, password);
-      cachedOwner = { uid: cred.user.uid };
-      setSession(cred.user.uid);
+      markSignedIn(cred.user.uid);
       return { ok: true, uid: cred.user.uid };
     }
     if (!isDemoMode) return { ok: false, error: DEMO_BLOCKED_ERROR };
@@ -318,8 +344,7 @@ export async function signInOwner(email: string, password: string, remember = tr
     } else {
       return { ok: false, error: "Wrong email or password." };
     }
-    cachedOwner = { uid: user.id };
-    setSession(user.id);
+    markSignedIn(user.id);
     return { ok: true, uid: user.id };
   } catch (e) {
     return { ok: false, error: friendlyAuthError(e) };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -38,6 +38,10 @@ export default function Login() {
   const [forgotBusy, setForgotBusy] = useState(false);
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  // An auth-state change can re-run this effect while a navigation is already
+  // in flight. Redirect at most once so two destinations can't fight each
+  // other and bounce the owner back to this page.
+  const didAutoRedirect = useRef(false);
 
   async function handleResetPassword(e: React.FormEvent) {
     e.preventDefault();
@@ -61,9 +65,12 @@ export default function Login() {
   // Already signed in (e.g. returned from a Google redirect)? Go home.
   useEffect(() => {
     async function init() {
+      if (didAutoRedirect.current) return;
       // 1. Collect any pending Google redirect result first.
       const redirectRes = await handleGoogleRedirectResult();
+      if (didAutoRedirect.current) return;
       if (redirectRes?.ok && redirectRes.uid) {
+        didAutoRedirect.current = true;
         router.replace(await firstDashboardPath(redirectRes.uid));
         return;
       }
@@ -72,7 +79,10 @@ export default function Login() {
       }
       // 2. Already signed in from a previous session.
       const uid = await currentOwner();
-      if (uid) router.replace(await firstDashboardPath(uid));
+      if (uid && !didAutoRedirect.current) {
+        didAutoRedirect.current = true;
+        router.replace(await firstDashboardPath(uid));
+      }
     }
     init();
   }, [router]);
@@ -278,7 +288,7 @@ export default function Login() {
                       {mode === m && (
                         <motion.span
                           layoutId="auth-pill"
-                          className="absolute inset-0 rounded-xl btn-gold"
+                          className="auth-pill"
                           style={{ boxShadow: "none" }}
                         />
                       )}

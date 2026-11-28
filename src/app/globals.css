@@ -110,6 +110,17 @@ input::placeholder, textarea::placeholder {
 }
 .btn-gold:disabled { opacity: 0.55; cursor: not-allowed; }
 
+/* Sliding pill behind the active sign-in / create-account tab.
+   Deliberately not .btn-gold: that class sets position:relative, which beat
+   Tailwind's .absolute and collapsed the pill into a zero-width inline box. */
+.auth-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 0.75rem;
+  background: linear-gradient(180deg, #f5dd93 0%, #d4af37 46%, #b8952c 100%);
+  box-shadow: none;
+}
+
 .btn-ghost {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.12);
